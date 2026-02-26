@@ -22,8 +22,16 @@ def run() -> None:
         page = context.new_page()
 
         try:
-            # Steps will be added below.
             page.goto("https://www.epam.com/", wait_until="domcontentloaded")
+
+            # Select "Services" from the header menu
+            page.get_by_role("link", name="Services").click()
+
+            # Click the "Explore Our Client Work" link
+            page.get_by_role("link", name="Explore Our Client Work").click()
+
+            # Verify that the "Client Work" text is visible on the page
+            expect(page.get_by_text("Client Work", exact=False)).to_be_visible()
         finally:
             context.close()
             browser.close()
