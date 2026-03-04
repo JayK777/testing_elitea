@@ -1,0 +1,70 @@
+{
+  "base_url": "${BASE_URL}",
+  "auth": {
+    "username": "${E2E_USERNAME}",
+    "password": "${E2E_PASSWORD}"
+  },
+  "selectors": {
+    "login_username": "[data-test=login-username]",
+    "login_password": "[data-test=login-password]",
+    "login_submit": "[data-test=login-submit]",
+
+    "checkout_open": "[data-test=go-to-checkout]",
+
+    "payment_method_section": "[data-test=payment-methods]",
+    "payment_method_card": "[data-test=pay-method-card]",
+    "payment_method_wallet": "[data-test=pay-method-wallet]",
+    "payment_method_netbanking": "[data-test=pay-method-netbanking]",
+
+    "card_number": "[data-test=card-number]",
+    "card_expiry": "[data-test=card-expiry]",
+    "card_cvv": "[data-test=card-cvv]",
+    "card_name": "[data-test=card-name]",
+
+    "pay_button": "[data-test=pay-now]",
+    "retry_button": "[data-test=payment-retry]",
+
+    "toast_message": "[data-test=toast]",
+    "order_status": "[data-test=order-status]",
+
+    "order_cancel": "[data-test=order-cancel]",
+    "refund_status": "[data-test=refund-status]",
+    "notification_area": "[data-test=notifications]"
+  },
+  "payments": {
+    "valid_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "invalid_card": {
+      "number": "411111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "expired_card": {
+      "number": "4111111111111111",
+      "expiry": "01/20",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "decline_card": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    }
+  },
+  "netbanking": {
+    "bank_name": "Test Bank",
+    "username": "bad_user",
+    "password": "bad_pass"
+  },
+  "api": {
+    "base_url": "${API_BASE_URL}",
+    "create_order_path": "/api/orders",
+    "payment_status_path": "/api/payments/status"
+  }
+}
