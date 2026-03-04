@@ -209,4 +209,99 @@ def _db_dsn() -> str:
         pytest.skip("psycopg2 not installed; skipping DB assertions")
     return dsn
 
-# <AUTOGEN:TESTS>
+def test_tc10_gateway_api_error_handled_gracefully(api: ApiClient, test_data: Dict[str, Any]) -> None:
+    """TC_10: Gateway API error (HTTP 5xx/invalid payload) handled gracefully."""
+    pay_path = test_data["api"]["endpoints"].get("pay_order")
+    if not pay_path:
+        pytest.skip("pay_order endpoint not configured")
+
+    resp = api.request(
+        "POST",
+        pay_path,
+        json_body={"malformed": True},
+        headers={"X-Force-Gateway-Error": "500"},
+        retries=1,
+    )
+
+    assert resp.status_code >= 400, "Expected a handled error response for forced gateway failure"
+
+    content_type = resp.headers.get("Content-Type", "")
+    if "application/json" in content_type:
+        body = resp.json()
+        assert any(k in body for k in ("error", "message", "details")), body
+    else:
+        # Still acceptable as long as service returns promptly with a readable payload.
+        assert resp.text.strip(), "Expected non-empty error response body"
+
+
+def test_tc13_order_cancellation_triggers_refund(api: ApiClient, test_data: Dict[str, Any]) -> None:
+    """TC_13: Order cancellation after successful payment triggers refund and status update."""
+    order_id = _get_paid_order_id(api, test_data)
+    cancel_path = test_data["api"]["endpoints"]["cancel_order"].format(order_id=order_id)
+
+    cancel_resp = api.request("POST", cancel_path, json_body={"reason": "qa_automation"})
+    assert cancel_resp.status_code in {200, 202}, cancel_resp.text
+
+    status = _poll_order_status(api, test_data, order_id=order_id, timeout_s=180)
+    assert status, "Expected order status response"
+
+    refund_status = str(status.get("refund_status", "")).upper()
+    payment_status = str(status.get("payment_status", "")).upper()
+    assert any(x in refund_status for x in ("REFUND", "INITIAT")) or any(
+        x in payment_status for x in ("REFUND", "INITIAT")
+    ), status
+
+    # DB verification (optional)
+    dsn = _db_dsn()
+    with DbClient(dsn) as db:
+        count_row = db.fetch_one(
+            test_data["db"]["refunds_count_query"],
+            params={"order_id": order_id},
+        )
+        assert int(count_row.get("cnt", 0)) >= 1, count_row
+
+        latest = db.fetch_one(
+            test_data["db"]["latest_refund_query"],
+            params={"order_id": order_id},
+        )
+        assert latest.get("refund_id"), latest
+        assert str(latest.get("status", "")).upper() in {
+            "INITIATED",
+            "IN_PROGRESS",
+            "REFUNDED",
+            "SUCCESS",
+        }, latest
+
+
+def test_tc14_refund_idempotency_no_double_refund(api: ApiClient, test_data: Dict[str, Any]) -> None:
+    """TC_14: Repeated cancellation/refund requests should not double-refund."""
+    order_id = _get_paid_order_id(api, test_data)
+    cancel_path = test_data["api"]["endpoints"]["cancel_order"].format(order_id=order_id)
+
+    dsn = _db_dsn()
+    with DbClient(dsn) as db:
+        before = db.fetch_one(
+            test_data["db"]["refunds_count_query"],
+            params={"order_id": order_id},
+        )
+        before_cnt = int(before.get("cnt", 0))
+
+        first = api.request("POST", cancel_path, json_body={"reason": "qa_automation"})
+        second = api.request("POST", cancel_path, json_body={"reason": "qa_automation"})
+
+        assert first.status_code in {200, 202, 409}, first.text
+        assert second.status_code in {200, 202, 409}, second.text
+
+        # Give asynchronous refund creation time (if any)
+        time.sleep(3)
+
+        after = db.fetch_one(
+            test_data["db"]["refunds_count_query"],
+            params={"order_id": order_id},
+        )
+        after_cnt = int(after.get("cnt", 0))
+
+        assert after_cnt <= max(before_cnt + 1, 1), {
+            "before": before_cnt,
+            "after": after_cnt,
+        }
