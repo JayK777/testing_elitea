@@ -1,0 +1,40 @@
+{
+  "web": {
+    "base_url": "https://example-ecommerce.test",
+    "timeout_ms": 30000
+  },
+  "credentials": {
+    "username": "test_user",
+    "password": "test_password"
+  },
+  "checkout": {
+    "product_search_term": "test item",
+    "card_success": {
+      "card_number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User",
+      "otp": "000000"
+    },
+    "card_decline": {
+      "card_number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User",
+      "otp": "000000"
+    }
+  },
+  "api": {
+    "base_url": "https://example-ecommerce.test/api",
+    "order_status_endpoint": "/orders/{order_id}",
+    "refund_endpoint": "/orders/{order_id}/refund"
+  },
+  "db": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "ecommerce",
+    "user": "e2e_user",
+    "password": "e2e_password",
+    "sslmode": "prefer"
+  }
+}
