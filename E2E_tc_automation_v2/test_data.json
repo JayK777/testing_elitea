@@ -1,0 +1,81 @@
+{
+  "ui": {
+    "base_url": "https://your-app-under-test.example",
+    "login_path": "/login",
+    "payment_path_template": "/orders/{order_id}/payment",
+    "selectors": {
+      "username": "[data-testid='username']",
+      "password": "[data-testid='password']",
+      "login_submit": "[data-testid='login-submit']",
+
+      "payment_method_card": "[data-testid='pm-card']",
+      "payment_method_wallet": "[data-testid='pm-wallet']",
+
+      "card_number": "[data-testid='card-number']",
+      "card_expiry": "[data-testid='card-expiry']",
+      "card_cvv": "[data-testid='card-cvv']",
+      "pay_button": "[data-testid='pay-button']",
+
+      "status_badge": "[data-testid='payment-status']",
+      "transaction_id": "[data-testid='transaction-id']",
+      "error_banner": "[data-testid='error-banner']"
+    },
+    "network": {
+      "payment_create_url_regex": ".*/api/payments" 
+    }
+  },
+  "api": {
+    "base_url": "https://your-api.example",
+    "endpoints": {
+      "create_order": "/api/orders",
+      "pay_order": "/api/payments",
+      "cancel_order": "/api/orders/{order_id}/cancel",
+      "order_status": "/api/orders/{order_id}"
+    },
+    "timeouts": {
+      "connect": 5,
+      "read": 30
+    }
+  },
+  "db": {
+    "refunds_count_query": "SELECT COUNT(*) AS cnt FROM refunds WHERE order_id = %(order_id)s;",
+    "latest_refund_query": "SELECT refund_id, status, created_at FROM refunds WHERE order_id = %(order_id)s ORDER BY created_at DESC LIMIT 1;"
+  },
+  "users": {
+    "default": {
+      "username": "test_user",
+      "password": "test_pass"
+    }
+  },
+  "payments": {
+    "card_valid": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "card_invalid_number": {
+      "number": "123",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "card_expired": {
+      "number": "4111111111111111",
+      "expiry": "01/20",
+      "cvv": "123"
+    },
+    "card_invalid_cvv_short": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "12"
+    },
+    "card_invalid_cvv_long": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "12345"
+    },
+    "wallet_valid": {
+      "account": "wallet_test_account",
+      "pin": "0000"
+    }
+  }
+}
