@@ -232,3 +232,156 @@ def playwright_page(timeout_ms: int) -> Page:
         finally:
             context.close()
             browser.close()
+
+
+class Selectors:
+    """Central place for selectors (override with env vars if needed)."""
+
+    # Login
+    USERNAME = os.getenv("SEL_USERNAME", "#username")
+    PASSWORD = os.getenv("SEL_PASSWORD", "#password")
+    LOGIN_SUBMIT = os.getenv("SEL_LOGIN_SUBMIT", "button[type='submit']")
+    LOGIN_SUCCESS_MARKER = os.getenv("SEL_LOGIN_SUCCESS", "data-test=account")
+
+    # Shopping / checkout
+    SEARCH_INPUT = os.getenv("SEL_SEARCH_INPUT", "data-test=search")
+    SEARCH_SUBMIT = os.getenv("SEL_SEARCH_SUBMIT", "data-test=search-submit")
+    ADD_TO_CART = os.getenv("SEL_ADD_TO_CART", "data-test=add-to-cart")
+    CART_ICON = os.getenv("SEL_CART_ICON", "data-test=cart")
+    CHECKOUT_BUTTON = os.getenv("SEL_CHECKOUT_BUTTON", "data-test=checkout")
+
+    # Payment
+    PAY_METHOD_CARD = os.getenv("SEL_PAY_METHOD_CARD", "data-test=pay-method-card")
+    CARD_NUMBER = os.getenv("SEL_CARD_NUMBER", "data-test=card-number")
+    CARD_EXPIRY = os.getenv("SEL_CARD_EXPIRY", "data-test=card-expiry")
+    CARD_CVV = os.getenv("SEL_CARD_CVV", "data-test=card-cvv")
+    CARD_NAME = os.getenv("SEL_CARD_NAME", "data-test=card-name")
+    PAY_NOW = os.getenv("SEL_PAY_NOW", "data-test=pay-now")
+
+    STATUS_BANNER = os.getenv("SEL_STATUS_BANNER", "data-test=payment-status")
+    ERROR_BANNER = os.getenv("SEL_ERROR_BANNER", "data-test=payment-error")
+    ORDER_ID = os.getenv("SEL_ORDER_ID", "data-test=order-id")
+
+    # Cancel/Refund
+    CANCEL_ORDER = os.getenv("SEL_CANCEL_ORDER", "data-test=cancel-order")
+    CONFIRM_CANCEL = os.getenv("SEL_CONFIRM_CANCEL", "data-test=confirm-cancel")
+
+
+class CheckoutAutomation:
+    def __init__(self, page: Page, cfg: AppConfig, data: Dict[str, Any]) -> None:
+        self._page = page
+        self._cfg = cfg
+        self._data = data
+
+    @property
+    def page(self) -> Page:
+        return self._page
+
+    def open_login(self) -> None:
+        self._page.goto(f"{self._cfg.base_url}/login", wait_until="domcontentloaded")
+
+    def login(self) -> None:
+        self.open_login()
+        self._page.fill(Selectors.USERNAME, self._cfg.username)
+        self._page.fill(Selectors.PASSWORD, self._cfg.password)
+        self._page.click(Selectors.LOGIN_SUBMIT)
+        self._page.wait_for_selector(Selectors.LOGIN_SUCCESS_MARKER)
+
+    def add_item_to_cart(self) -> None:
+        search_term = str(self._data["checkout"]["product_search_term"])
+        self._page.goto(f"{self._cfg.base_url}/", wait_until="domcontentloaded")
+        self._page.fill(Selectors.SEARCH_INPUT, search_term)
+        self._page.click(Selectors.SEARCH_SUBMIT)
+        self._page.click(Selectors.ADD_TO_CART)
+
+    def go_to_checkout(self) -> None:
+        self._page.click(Selectors.CART_ICON)
+        self._page.click(Selectors.CHECKOUT_BUTTON)
+
+    def pay_with_card(self, card: Dict[str, Any]) -> None:
+        self._page.click(Selectors.PAY_METHOD_CARD)
+        self._page.fill(Selectors.CARD_NUMBER, str(card["card_number"]))
+        self._page.fill(Selectors.CARD_EXPIRY, str(card["expiry"]))
+        self._page.fill(Selectors.CARD_CVV, str(card["cvv"]))
+        self._page.fill(Selectors.CARD_NAME, str(card["name"]))
+        self._page.click(Selectors.PAY_NOW)
+
+    def wait_for_status(self, expected_regex: str, timeout_s: int = 60) -> str:
+        deadline = time.time() + timeout_s
+        last_text = ""
+        while time.time() < deadline:
+            try:
+                if self._page.is_visible(Selectors.STATUS_BANNER):
+                    last_text = self._page.inner_text(Selectors.STATUS_BANNER).strip()
+                    if re.search(expected_regex, last_text, flags=re.IGNORECASE):
+                        return last_text
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(1)
+        raise AutomationError(
+            f"Timed out waiting for status /{expected_regex}/. Last status: '{last_text}'"
+        )
+
+    def read_error(self) -> str:
+        if not self._page.is_visible(Selectors.ERROR_BANNER):
+            return ""
+        return self._page.inner_text(Selectors.ERROR_BANNER).strip()
+
+    def read_order_id(self) -> str:
+        if self._page.is_visible(Selectors.ORDER_ID):
+            return self._page.inner_text(Selectors.ORDER_ID).strip()
+
+        # Fallback: try to locate something that looks like an order id
+        content = self._page.content()
+        match = re.search(r"order\s*#?\s*([A-Za-z0-9\-]{6,})", content, flags=re.I)
+        if match:
+            return match.group(1)
+
+        raise AutomationError("Unable to determine order_id from UI.")
+
+    def cancel_order_via_ui(self) -> None:
+        self._page.click(Selectors.CANCEL_ORDER)
+        self._page.click(Selectors.CONFIRM_CANCEL)
+
+
+def wait_for_order_status_api(
+    api: ApiClient,
+    endpoint_template: str,
+    order_id: str,
+    expected_status: str,
+    timeout_s: int = 60,
+) -> Dict[str, Any]:
+    deadline = time.time() + timeout_s
+    last: Dict[str, Any] = {}
+    path = endpoint_template.format(order_id=order_id)
+
+    while time.time() < deadline:
+        try:
+            last = api.get_json(path)
+            status = str(last.get("payment_status") or last.get("status") or "").lower()
+            if status == expected_status.lower():
+                return last
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("API poll failed for order_id=%s", order_id)
+        time.sleep(2)
+
+    raise AutomationError(
+        f"Order {order_id} did not reach status '{expected_status}'. Last payload: {last}"
+    )
+
+
+def best_effort_db_payment_status(cfg: DbConfig, order_id: str) -> Optional[str]:
+    """Return payment status from DB if possible; otherwise None (skip)."""
+    try:
+        with postgres_connection(cfg) as conn:
+            with conn.cursor() as cur:
+                # NOTE: Update table/column names to match your schema.
+                cur.execute(
+                    "SELECT payment_status FROM payments WHERE order_id = %s ORDER BY updated_at DESC LIMIT 1",
+                    (order_id,),
+                )
+                row = cur.fetchone()
+                return str(row[0]) if row else None
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Skipping DB verification (%s)", exc)
+        return None
