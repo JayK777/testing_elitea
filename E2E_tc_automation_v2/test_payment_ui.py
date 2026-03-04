@@ -203,4 +203,150 @@ def app(page: Page, test_data: Dict[str, Any], settings: Settings) -> PaymentApp
     payment_app.login(user["username"], user["password"])
     return payment_app
 
-# <AUTOGEN:TESTS>
+@pytest.fixture(scope="function")
+def order_id() -> str:
+    return _required_order_id()
+
+
+def _fail_with_artifacts(page: Page, msg: str) -> None:
+    shot = safe_screenshot(page, f"failure_{int(time.time())}")
+    if shot:
+        msg = f"{msg} (screenshot: {shot})"
+    pytest.fail(msg)
+
+
+def test_tc01_card_payment_happy_path(app: PaymentApp, order_id: str) -> None:
+    """TC_01: Card payment - successful end-to-end payment (Happy path)."""
+    try:
+        app.open_payment_page(order_id)
+        app.select_card()
+
+        card = app.data["payments"]["card_valid"]
+        app.fill_card(card["number"], card["expiry"], card["cvv"])
+        app.submit_payment()
+
+        final = app.wait_for_final_status(allowed_final=("PAID", "SUCCESS"), timeout_s=120)
+        assert any(token in final for token in ("PAID", "SUCCESS"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("TC_01 failed")
+        _fail_with_artifacts(app.page, f"TC_01 failed: {exc}")
+
+
+def test_tc02_wallet_payment_happy_path(app: PaymentApp, order_id: str) -> None:
+    """TC_02: Digital wallet payment - successful end-to-end payment (Happy path)."""
+    try:
+        app.open_payment_page(order_id)
+        app.select_wallet()
+
+        # Wallet flows differ by product; typically you'd interact with a redirect/iframe.
+        # This test validates that selecting the wallet method and confirming leads to success.
+        app.submit_payment()
+
+        final = app.wait_for_final_status(allowed_final=("PAID", "SUCCESS"), timeout_s=180)
+        assert any(token in final for token in ("PAID", "SUCCESS"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("TC_02 failed")
+        _fail_with_artifacts(app.page, f"TC_02 failed: {exc}")
+
+
+@pytest.mark.parametrize(
+    "payment_key, expected_error_substring",
+    [
+        ("card_invalid_number", "CARD"),
+        ("card_expired", "EXPIRED"),
+        ("card_invalid_cvv_short", "CVV"),
+        ("card_invalid_cvv_long", "CVV"),
+    ],
+)
+def test_card_negative_validations(
+    app: PaymentApp,
+    order_id: str,
+    payment_key: str,
+    expected_error_substring: str,
+) -> None:
+    """TC_04/05/06: Card validation negatives grouped in one test."""
+    try:
+        app.open_payment_page(order_id)
+        app.select_card()
+
+        card = app.data["payments"][payment_key]
+        app.fill_card(card["number"], card["expiry"], card["cvv"])
+        app.submit_payment()
+
+        error = app.page.locator(app.selectors["error_banner"])
+        error.wait_for(state="visible", timeout=15_000)
+        assert expected_error_substring in error.inner_text().upper()
+    except PlaywrightTimeoutError as exc:
+        LOG.exception("Card negative validation timed out")
+        _fail_with_artifacts(app.page, f"Expected validation error not shown: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("Card negative validation failed")
+        _fail_with_artifacts(app.page, f"Card negative validation failed: {exc}")
+
+
+def test_tc08_gateway_delay_pending_then_resolves(app: PaymentApp, order_id: str) -> None:
+    """TC_08: Gateway timeout/delayed response - status shows pending then resolves."""
+    try:
+        app.open_payment_page(order_id)
+        app.select_card()
+
+        card = app.data["payments"]["card_valid"]
+        app.fill_card(card["number"], card["expiry"], card["cvv"])
+
+        app.submit_payment()
+
+        seen_pending = False
+        statuses = []
+        end = time.time() + 120
+        while time.time() < end:
+            text = app.status_text().upper()
+            statuses.append(text)
+            if any(x in text for x in ("PENDING", "PROCESS", "IN_PROGRESS")):
+                seen_pending = True
+            if any(x in text for x in ("PAID", "SUCCESS", "FAILED", "CANCELLED")):
+                break
+            time.sleep(1)
+
+        assert seen_pending, f"Expected pending/processing state. Observed: {statuses[:10]}..."
+        assert any(
+            any(x in s for x in ("PAID", "SUCCESS", "FAILED", "CANCELLED"))
+            for s in statuses
+        ), f"Expected final resolution. Observed: {statuses[-10:]}"
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("TC_08 failed")
+        _fail_with_artifacts(app.page, f"TC_08 failed: {exc}")
+
+
+def test_tc11_multiple_rapid_pay_clicks_no_duplicate_transaction(
+    app: PaymentApp,
+    order_id: str,
+) -> None:
+    """TC_11: Multiple rapid taps should not create duplicate transactions."""
+    payment_re = re.compile(app.data["ui"]["network"]["payment_create_url_regex"])
+    request_count = 0
+
+    def on_request(req) -> None:  # type: ignore[no-untyped-def]
+        nonlocal request_count
+        if req.method.lower() == "post" and payment_re.match(req.url):
+            request_count += 1
+
+    app.page.on("request", on_request)
+
+    try:
+        app.open_payment_page(order_id)
+        app.select_card()
+
+        card = app.data["payments"]["card_valid"]
+        app.fill_card(card["number"], card["expiry"], card["cvv"])
+
+        pay_btn = app.page.locator(app.selectors["pay_button"])
+        pay_btn.click()
+        for _ in range(5):
+            pay_btn.click(force=True, timeout=2_000)
+
+        _ = app.wait_for_final_status(allowed_final=("PAID", "SUCCESS", "FAILED"), timeout_s=120)
+
+        assert request_count <= 1, f"Expected <=1 payment create request, got {request_count}"
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("TC_11 failed")
+        _fail_with_artifacts(app.page, f"TC_11 failed: {exc}")
