@@ -62,6 +62,9 @@
     "username": "bad_user",
     "password": "bad_pass"
   },
+  "network": {
+    "gateway_url_pattern": "" 
+  },
   "api": {
     "base_url": "${API_BASE_URL}",
     "create_order_path": "/api/orders",
