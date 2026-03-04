@@ -119,3 +119,36 @@ def pg_conn() -> Generator[Any, None, None]:
         yield conn
     finally:
         conn.close()
+
+
+def pytest_configure() -> None:
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+    """Capture a screenshot on UI failures.
+
+    This is best-effort and should never break the test run.
+    """
+    outcome = yield
+    rep = outcome.get_result()
+
+    if rep.when != "call" or rep.passed:
+        return
+
+    page_obj = item.funcargs.get("page")
+    if not page_obj:
+        return
+
+    try:
+        artifacts_dir = Path(os.environ.get("E2E_ARTIFACTS_DIR", "./artifacts"))
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = artifacts_dir / f"{item.name}.png"
+        page_obj.screenshot(path=str(screenshot_path), full_page=True)
+        LOGGER.error("Saved failure screenshot: %s", screenshot_path)
+    except Exception as exc:  # pragma: no cover
+        LOGGER.error("Failed to capture screenshot: %s", exc)
