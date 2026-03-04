@@ -1,0 +1,75 @@
+{
+  "base_url": "https://your-app-under-test.example",
+  "browser": "chromium",
+  "headless": true,
+  "viewport": {"width": 1366, "height": 768},
+  "paths": {
+    "login": "/login",
+    "shop": "/"
+  },
+  "timeouts": {
+    "payment_status_ms": 60000
+  },
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "payments": {
+    "valid_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "declined_card": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "alternate_method": {
+      "method": "net_banking"
+    }
+  },
+  "expected": {
+    "payment_success_substring": "success",
+    "payment_failure_substring": "declined",
+    "refund_status_substring": "refund",
+    "order_state_after_payment": "confirmed",
+    "order_state_after_refund": "cancelled",
+    "db_payment_status_after_payment": "paid",
+    "db_payment_status_after_refund": "refunded"
+  },
+  "selectors": {
+    "login_username": "[data-testid='login-username']",
+    "login_password": "[data-testid='login-password']",
+    "login_submit": "[data-testid='login-submit']",
+
+    "first_item": "[data-testid='product-card']:first-child",
+    "add_to_cart": "[data-testid='add-to-cart']",
+    "go_to_cart": "[data-testid='go-to-cart']",
+    "proceed_to_checkout": "[data-testid='proceed-to-checkout']",
+
+    "payment_card": "[data-testid='pay-method-card']",
+    "payment_wallet": "[data-testid='pay-method-wallet']",
+    "payment_net_banking": "[data-testid='pay-method-netbanking']",
+
+    "card_number": "[data-testid='card-number']",
+    "card_expiry": "[data-testid='card-expiry']",
+    "card_cvv": "[data-testid='card-cvv']",
+    "pay_now": "[data-testid='pay-now']",
+
+    "payment_status": "[data-testid='payment-status']",
+    "order_id": "[data-testid='order-id']",
+
+    "payment_error": "[data-testid='payment-error']",
+    "order_summary": "[data-testid='order-summary']",
+    "change_payment_method": "[data-testid='change-payment-method']",
+
+    "cancel_order": "[data-testid='cancel-order']",
+    "confirm_cancel": "[data-testid='confirm-cancel']",
+    "refund_status": "[data-testid='refund-status']",
+    "notification_toast": "[data-testid='toast']"
+  },
+  "api_base_url": "https://your-api.example",
+  "api_token": "",
+  "pg_dsn": ""
+}
