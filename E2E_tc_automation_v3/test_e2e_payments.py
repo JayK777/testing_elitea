@@ -275,3 +275,214 @@ def _db_fetch_payment_row(cfg: RuntimeConfig, order_id: str) -> Optional[Dict[st
     except Exception as exc:  # noqa: BLE001
         LOGGER.warning("DB validation failed: %s", exc)
         return None
+
+
+def _place_paid_order(page: Page, cfg: RuntimeConfig, test_data: Dict[str, Any]) -> str:
+    """Places an order and performs a successful card payment."""
+
+    _ui_login(page, cfg, test_data)
+    _ui_add_item_to_cart(page, cfg, test_data)
+    _ui_proceed_to_checkout(page, test_data)
+
+    _ui_select_payment_method(page, test_data, method="card")
+    card = _require_key(_require_key(test_data, "payments"), "valid_card")
+    _ui_pay_by_card(page, test_data, card=card)
+
+    status_text, order_id = _ui_wait_for_status(page, test_data)
+    expected = str(test_data.get("expected", {}).get("payment_success_substring", "success")).lower()
+    assert expected in status_text.lower(), f"Expected success status containing '{expected}', got '{status_text}'"
+
+    return order_id
+
+
+def _run_test_case(page: Page, name: str, fn) -> None:  # type: ignore[no-untyped-def]
+    try:
+        fn()
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("Test case failed: %s", name)
+        _save_failure_artifacts(page, name=name)
+        raise exc
+
+
+@pytest.fixture(scope="session")
+def test_data() -> Dict[str, Any]:
+    _configure_logging()
+    return _load_test_data()
+
+
+@pytest.fixture(scope="session")
+def cfg(test_data: Dict[str, Any]) -> RuntimeConfig:
+    return _get_runtime_config(test_data)
+
+
+@pytest.fixture(scope="session")
+def playwright_instance() -> Playwright:
+    with sync_playwright() as pw:
+        yield pw
+
+
+@pytest.fixture(scope="session")
+def browser(playwright_instance: Playwright, test_data: Dict[str, Any]) -> Browser:
+    browser_name = str(test_data.get("browser", "chromium")).strip().lower()
+    headless = bool(test_data.get("headless", True))
+
+    if browser_name == "firefox":
+        return playwright_instance.firefox.launch(headless=headless)
+    if browser_name == "webkit":
+        return playwright_instance.webkit.launch(headless=headless)
+
+    return playwright_instance.chromium.launch(headless=headless)
+
+
+@pytest.fixture()
+def page(browser: Browser, test_data: Dict[str, Any]) -> Page:
+    context = browser.new_context(
+        viewport=test_data.get("viewport", {"width": 1366, "height": 768}),
+    )
+    page_obj = context.new_page()
+    yield page_obj
+
+    try:
+        context.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def test_tc01_happy_path_successful_card_payment(page: Page, cfg: RuntimeConfig, test_data: Dict[str, Any]) -> None:
+    """TC_01: Successful card payment shows confirmation and order proceeds."""
+
+    def _steps() -> None:
+        order_id = _place_paid_order(page, cfg, test_data)
+
+        api_status = _api_get_order_status(cfg, order_id)
+        if api_status is not None:
+            expected_state = test_data.get("expected", {}).get("order_state_after_payment")
+            if expected_state:
+                assert (
+                    str(api_status.get("state", "")).lower() == str(expected_state).lower()
+                ), f"Unexpected API order state: {api_status}"
+
+        db_row = _db_fetch_payment_row(cfg, order_id)
+        if db_row is not None:
+            expected_payment_status = test_data.get("expected", {}).get("db_payment_status_after_payment")
+            if expected_payment_status:
+                assert (
+                    str(db_row.get("status", "")).lower() == str(expected_payment_status).lower()
+                ), f"Unexpected DB payment status: {db_row}"
+
+    _run_test_case(page, "TC_01", _steps)
+
+
+def test_tc02_payment_failure_allows_retry_or_alternate_method(
+    page: Page,
+    cfg: RuntimeConfig,
+    test_data: Dict[str, Any],
+) -> None:
+    """TC_02: Payment failure shows actionable error and allows retry/alternate method."""
+
+    def _steps() -> None:
+        selectors = test_data.get("selectors", {})
+
+        _ui_login(page, cfg, test_data)
+        _ui_add_item_to_cart(page, cfg, test_data)
+        _ui_proceed_to_checkout(page, test_data)
+
+        _ui_select_payment_method(page, test_data, method="card")
+        card = _require_key(_require_key(test_data, "payments"), "declined_card")
+        _ui_pay_by_card(page, test_data, card=card)
+
+        # Expect an error message and ability to retry/change method.
+        error_selector = selectors.get("payment_error")
+        if not error_selector:
+            raise KeyError("Missing selectors.payment_error in test_data.json")
+
+        page.wait_for_selector(error_selector, timeout=60000)
+        error_text = page.inner_text(error_selector).strip()
+
+        expected_sub = str(test_data.get("expected", {}).get("payment_failure_substring", "declined")).lower()
+        assert expected_sub in error_text.lower(), f"Expected error containing '{expected_sub}', got '{error_text}'"
+
+        # Verify checkout data is still present (order summary/cart not reset)
+        summary_sel = selectors.get("order_summary")
+        if summary_sel:
+            assert page.is_visible(summary_sel), "Order summary not visible after payment failure"
+
+        # Retry / Alternate method
+        if selectors.get("change_payment_method"):
+            page.click(selectors["change_payment_method"])
+
+        alt = _require_key(_require_key(test_data, "payments"), "alternate_method")
+        alt_method = str(_require_key(alt, "method"))
+        _ui_select_payment_method(page, test_data, method=alt_method)
+
+        if alt_method == "card":
+            _ui_pay_by_card(page, test_data, card=_require_key(_require_key(test_data, "payments"), "valid_card"))
+        else:
+            # Generic submit for non-card methods (selectors must be configured)
+            page.click(_selector(selectors, "pay_now"))
+
+        status_text, _order_id = _ui_wait_for_status(page, test_data)
+        expected_success = str(test_data.get("expected", {}).get("payment_success_substring", "success")).lower()
+        assert (
+            expected_success in status_text.lower()
+        ), f"Expected success after alternate method, got '{status_text}'"
+
+    _run_test_case(page, "TC_02", _steps)
+
+
+def test_tc04_refund_cancellation_updates_status_and_notifies_user(
+    page: Page,
+    cfg: RuntimeConfig,
+    test_data: Dict[str, Any],
+) -> None:
+    """TC_04: Refund/cancellation updates status and user receives notification."""
+
+    def _steps() -> None:
+        selectors = test_data.get("selectors", {})
+
+        order_id = _place_paid_order(page, cfg, test_data)
+
+        cancelled_by_api = _api_cancel_order(cfg, order_id)
+        if not cancelled_by_api:
+            # Fallback to UI cancellation if configured.
+            cancel_button = selectors.get("cancel_order")
+            if not cancel_button:
+                pytest.skip("Cancel/refund not configured (no API token or UI selector).")
+
+            page.click(cancel_button)
+            confirm_btn = selectors.get("confirm_cancel")
+            if confirm_btn:
+                page.click(confirm_btn)
+
+        refund_status_sel = selectors.get("refund_status") or selectors.get("payment_status")
+        if not refund_status_sel:
+            raise KeyError("Missing selectors.refund_status (or payment_status) in test_data.json")
+
+        page.wait_for_selector(refund_status_sel, timeout=120000)
+        refund_text = page.inner_text(refund_status_sel).strip()
+        expected_refund_sub = str(test_data.get("expected", {}).get("refund_status_substring", "refund")).lower()
+        assert (
+            expected_refund_sub in refund_text.lower()
+        ), f"Expected refund/cancel status containing '{expected_refund_sub}', got '{refund_text}'"
+
+        notification_sel = selectors.get("notification_toast")
+        if notification_sel:
+            assert page.is_visible(notification_sel), "Refund/cancel notification not visible"
+
+        api_status = _api_get_order_status(cfg, order_id)
+        if api_status is not None:
+            expected_state = test_data.get("expected", {}).get("order_state_after_refund")
+            if expected_state:
+                assert (
+                    str(api_status.get("state", "")).lower() == str(expected_state).lower()
+                ), f"Unexpected API order state after refund: {api_status}"
+
+        db_row = _db_fetch_payment_row(cfg, order_id)
+        if db_row is not None:
+            expected_payment_status = test_data.get("expected", {}).get("db_payment_status_after_refund")
+            if expected_payment_status:
+                assert (
+                    str(db_row.get("status", "")).lower() == str(expected_payment_status).lower()
+                ), f"Unexpected DB payment status after refund: {db_row}"
+
+    _run_test_case(page, "TC_04", _steps)
