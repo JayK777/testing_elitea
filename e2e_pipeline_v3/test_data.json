@@ -1,0 +1,113 @@
+{
+  "web": {
+    "base_url": "https://your-app-under-test.example",
+    "timeouts_ms": {
+      "navigation": 30000,
+      "action": 10000
+    },
+    "credentials": {
+      "username": "test_user",
+      "password": "test_pass"
+    },
+    "selectors": {
+      "login_username": "[data-test='username']",
+      "login_password": "[data-test='password']",
+      "login_submit": "[data-test='login-submit']",
+      "add_to_cart": "[data-test='add-to-cart']",
+      "cart_checkout": "[data-test='checkout']",
+      "payment_method_card": "[data-test='payment-card']",
+      "payment_method_wallet": "[data-test='payment-wallet']",
+      "pay_button": "[data-test='pay']",
+      "order_status": "[data-test='order-status']",
+      "payment_error": "[data-test='payment-error']",
+      "payment_success": "[data-test='payment-success']"
+    },
+    "payment": {
+      "card": {
+        "fields": {
+          "number": "[data-test='card-number']",
+          "expiry_month": "[data-test='card-exp-month']",
+          "expiry_year": "[data-test='card-exp-year']",
+          "cvv": "[data-test='card-cvv']",
+          "name": "[data-test='card-name']"
+        },
+        "valid": {
+          "number": "4111111111111111",
+          "expiry_month": "12",
+          "expiry_year": "2030",
+          "cvv": "123",
+          "name": "Test User"
+        },
+        "invalid_number": {
+          "number": "411111111111111",
+          "expiry_month": "12",
+          "expiry_year": "2030",
+          "cvv": "123",
+          "name": "Test User"
+        },
+        "expired": {
+          "number": "4111111111111111",
+          "expiry_month": "01",
+          "expiry_year": "2020",
+          "cvv": "123",
+          "name": "Test User"
+        },
+        "decline": {
+          "number": "4000000000000002",
+          "expiry_month": "12",
+          "expiry_year": "2030",
+          "cvv": "123",
+          "name": "Test User"
+        }
+      },
+      "wallet": {
+        "insufficient_balance_user": "wallet_low_balance"
+      },
+      "performance_threshold_seconds": 10
+    },
+    "network_simulation": {
+      "timeout_url_pattern": "**/payment-gateway/**",
+      "timeout_mode": "abort" 
+    },
+    "security": {
+      "payment_request_url_patterns": [
+        "**/payment/**",
+        "**/gateway/**"
+      ],
+      "sensitive_query_keys": [
+        "card",
+        "pan",
+        "cvv",
+        "password",
+        "token"
+      ]
+    }
+  },
+  "api": {
+    "base_url": "https://your-api.example",
+    "endpoints": {
+      "login": "/auth/login",
+      "refund": "/payments/refund"
+    },
+    "auth": {
+      "username": "api_user",
+      "password": "api_pass"
+    },
+    "test_entities": {
+      "already_refunded_order_id": ""
+    }
+  },
+  "db": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "appdb",
+    "user": "appuser",
+    "password": "apppass",
+    "sslmode": "prefer",
+    "queries": {
+      "payment_status_by_order_id": "SELECT payment_status FROM payments WHERE order_id = %s",
+      "transactions_count_by_order_id": "SELECT COUNT(*) FROM transactions WHERE order_id = %s"
+    }
+  }
+}
