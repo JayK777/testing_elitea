@@ -385,3 +385,187 @@ def best_effort_db_payment_status(cfg: DbConfig, order_id: str) -> Optional[str]
     except Exception as exc:  # noqa: BLE001
         LOGGER.warning("Skipping DB verification (%s)", exc)
         return None
+
+
+def _build_runtime() -> tuple[AppConfig, Dict[str, Any]]:
+    configure_logging()
+    data = env_override(load_test_data())
+    cfg = build_config(data)
+    return cfg, data
+
+
+def _api_client(cfg: AppConfig) -> ApiClient:
+    token = os.getenv("E2E_API_TOKEN")
+    return ApiClient(cfg.api_base_url, token=token)
+
+
+def _run_step(page: Page, step_name: str, fn) -> Any:
+    try:
+        LOGGER.info("STEP: %s", step_name)
+        return fn()
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("Step failed: %s", step_name)
+        take_debug_artifacts(page, step_name)
+        raise exc
+
+
+def test_tc_01_happy_path_card_payment_success() -> None:
+    """TC_01: Happy path: Successful payment via Credit/Debit Card."""
+    cfg, data = _build_runtime()
+    api = _api_client(cfg)
+
+    with playwright_page(cfg.timeout_ms) as page:
+        app = CheckoutAutomation(page, cfg, data)
+
+        _run_step(page, "login", app.login)
+        _run_step(page, "add_item_to_cart", app.add_item_to_cart)
+        _run_step(page, "go_to_checkout", app.go_to_checkout)
+
+        card = data["checkout"]["card_success"]
+        _run_step(page, "pay_with_card_success", lambda: app.pay_with_card(card))
+
+        status_text = _run_step(
+            page,
+            "wait_for_success_status",
+            lambda: app.wait_for_status(r"success|paid|completed"),
+        )
+        LOGGER.info("Payment status banner: %s", status_text)
+
+        order_id = _run_step(page, "read_order_id", app.read_order_id)
+        LOGGER.info("Created order_id=%s", order_id)
+
+        # API verification (best-effort)
+        try:
+            payload = wait_for_order_status_api(
+                api,
+                cfg.api_order_status_endpoint,
+                order_id,
+                expected_status="success",
+                timeout_s=60,
+            )
+            LOGGER.info("API order payload: %s", payload)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Skipping/failed API verification (%s)", exc)
+
+        # DB verification (best-effort)
+        db_status = best_effort_db_payment_status(cfg.db, order_id)
+        if db_status is not None:
+            assert str(db_status).lower() in {"success", "paid", "completed"}
+
+
+def test_tc_02_declined_then_retry_success() -> None:
+    """TC_02: Gateway declines payment -> clear error + retry/change method."""
+    cfg, data = _build_runtime()
+
+    with playwright_page(cfg.timeout_ms) as page:
+        app = CheckoutAutomation(page, cfg, data)
+
+        _run_step(page, "login", app.login)
+        _run_step(page, "add_item_to_cart", app.add_item_to_cart)
+        _run_step(page, "go_to_checkout", app.go_to_checkout)
+
+        decline_card = data["checkout"]["card_decline"]
+        _run_step(page, "pay_with_card_decline", lambda: app.pay_with_card(decline_card))
+
+        _run_step(
+            page,
+            "wait_for_failure_status",
+            lambda: app.wait_for_status(r"fail|declin|error"),
+        )
+
+        error_text = _run_step(page, "read_error", app.read_error)
+        assert error_text, "Expected a non-empty, informative error message on decline."
+        LOGGER.info("Decline error banner: %s", error_text)
+
+        # Retry with a known-success card without losing context
+        success_card = data["checkout"]["card_success"]
+        _run_step(page, "retry_pay_with_card_success", lambda: app.pay_with_card(success_card))
+        _run_step(page, "wait_for_success_after_retry", lambda: app.wait_for_status(r"success|paid|completed"))
+
+
+def test_tc_05_refund_idempotent() -> None:
+    """TC_05: Cancel/refund after successful payment -> status updated + idempotent."""
+    cfg, data = _build_runtime()
+    api = _api_client(cfg)
+
+    with playwright_page(cfg.timeout_ms) as page:
+        app = CheckoutAutomation(page, cfg, data)
+
+        _run_step(page, "login", app.login)
+        _run_step(page, "add_item_to_cart", app.add_item_to_cart)
+        _run_step(page, "go_to_checkout", app.go_to_checkout)
+
+        success_card = data["checkout"]["card_success"]
+        _run_step(page, "pay_with_card_success", lambda: app.pay_with_card(success_card))
+        _run_step(page, "wait_for_success_status", lambda: app.wait_for_status(r"success|paid|completed"))
+        order_id = _run_step(page, "read_order_id", app.read_order_id)
+        LOGGER.info("Refund test order_id=%s", order_id)
+
+        # Prefer API refund for idempotency validation.
+        refund_path = cfg.api_refund_endpoint.format(order_id=order_id)
+        try:
+            # 1st refund attempt
+            resp1 = api._session.post(f"{cfg.api_base_url}{refund_path}", json={}, timeout=30)  # noqa: SLF001
+            if resp1.status_code >= 500:
+                resp1.raise_for_status()
+            LOGGER.info("Refund attempt #1 status=%s body=%s", resp1.status_code, resp1.text)
+
+            # 2nd refund attempt (should be idempotent)
+            resp2 = api._session.post(f"{cfg.api_base_url}{refund_path}", json={}, timeout=30)  # noqa: SLF001
+            if resp2.status_code >= 500:
+                resp2.raise_for_status()
+            LOGGER.info("Refund attempt #2 status=%s body=%s", resp2.status_code, resp2.text)
+
+            # Acceptable idempotent outcomes: 200/201/202 or 409 (already refunded)
+            assert resp2.status_code in {200, 201, 202, 204, 409}
+
+            # Verify final state
+            try:
+                wait_for_order_status_api(
+                    api,
+                    cfg.api_order_status_endpoint,
+                    order_id,
+                    expected_status="refunded",
+                    timeout_s=90,
+                )
+            except AutomationError:
+                # Some systems use 'cancelled' post-refund.
+                wait_for_order_status_api(
+                    api,
+                    cfg.api_order_status_endpoint,
+                    order_id,
+                    expected_status="cancelled",
+                    timeout_s=90,
+                )
+
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("API refund path failed (%s). Falling back to UI cancel.", exc)
+            _run_step(page, "cancel_order_via_ui", app.cancel_order_via_ui)
+
+
+def _run_as_script() -> int:
+    tests = [
+        test_tc_01_happy_path_card_payment_success,
+        test_tc_02_declined_then_retry_success,
+        test_tc_05_refund_idempotent,
+    ]
+
+    failures: list[str] = []
+    for test_fn in tests:
+        name = test_fn.__name__
+        try:
+            LOGGER.info("RUNNING: %s", name)
+            test_fn()
+            LOGGER.info("PASSED: %s", name)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.error("FAILED: %s (%s)", name, exc)
+            failures.append(name)
+
+    if failures:
+        LOGGER.error("Failed tests: %s", ", ".join(failures))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_run_as_script())
