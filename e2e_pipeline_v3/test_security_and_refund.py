@@ -75,7 +75,10 @@ def page(test_data: Dict[str, Any]) -> Page:
 @pytest.fixture(scope="session")
 def api_config(test_data: Dict[str, Any]) -> ApiConfig:
     api = _require(test_data, "api")
-    return ApiConfig(base_url=_require(api, "base_url"), endpoints=_require(api, "endpoints"))
+    return ApiConfig(
+        base_url=_require(api, "base_url"),
+        endpoints=_require(api, "endpoints"),
+    )
 
 
 def _skip_if_missing_web_prereqs(test_data: Dict[str, Any]) -> None:
