@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import requests
-from playwright.sync_api import Browser, Page, Playwright, sync_playwright
+from playwright.sync_api import Page, sync_playwright
 
 
 LOGGER = logging.getLogger(__name__)
