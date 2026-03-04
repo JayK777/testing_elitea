@@ -130,3 +130,105 @@ def build_config(data: Dict[str, Any]) -> AppConfig:
             sslmode=str(db.get("sslmode", "prefer")),
         ),
     )
+
+
+class AutomationError(RuntimeError):
+    """Raised when the automation flow cannot proceed safely."""
+
+
+class ApiClient:
+    def __init__(self, base_url: str, token: Optional[str] = None) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._session = requests.Session()
+        self._session.headers.update({"Accept": "application/json"})
+        if token:
+            self._session.headers.update({"Authorization": f"Bearer {token}"})
+
+    def get_json(self, path: str, timeout_s: int = 30) -> Dict[str, Any]:
+        url = f"{self._base_url}{path}"
+        resp = self._session.get(url, timeout=timeout_s)
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise AutomationError(f"Unexpected JSON payload from {url}: {type(data)}")
+        return data
+
+    def post_json(self, path: str, payload: Dict[str, Any], timeout_s: int = 30) -> Dict[str, Any]:
+        url = f"{self._base_url}{path}"
+        resp = self._session.post(url, json=payload, timeout=timeout_s)
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise AutomationError(f"Unexpected JSON payload from {url}: {type(data)}")
+        return data
+
+
+@contextmanager
+def postgres_connection(cfg: DbConfig):
+    """Best-effort PostgreSQL connection.
+
+    If `psycopg2` is not installed or the DB is unreachable, the caller can catch
+    the exception and treat it as a skipped DB verification.
+    """
+    try:
+        import psycopg2  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        raise AutomationError(
+            "psycopg2 is required for DB checks (pip install psycopg2-binary)."
+        ) from exc
+
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=cfg.host,
+            port=cfg.port,
+            dbname=cfg.database,
+            user=cfg.user,
+            password=cfg.password,
+            sslmode=cfg.sslmode,
+        )
+        yield conn
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def safe_slug(text: str) -> str:
+    text = text.strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return re.sub(r"_+", "_", text).strip("_")
+
+
+def take_debug_artifacts(page: Page, name: str) -> None:
+    """Capture screenshot + HTML for easier debugging in CI."""
+    ensure_dir(ARTIFACTS_DIR)
+    slug = safe_slug(name)
+    screenshot_path = ARTIFACTS_DIR / f"{slug}.png"
+    html_path = ARTIFACTS_DIR / f"{slug}.html"
+
+    try:
+        page.screenshot(path=str(screenshot_path), full_page=True)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Failed to capture screenshot: %s", screenshot_path)
+
+    try:
+        html_path.write_text(page.content(), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Failed to capture HTML: %s", html_path)
+
+
+@contextmanager
+def playwright_page(timeout_ms: int) -> Page:
+    headless = os.getenv("HEADLESS", "true").lower() in {"1", "true", "yes"}
+    slow_mo_ms = int(os.getenv("SLOW_MO_MS", "0"))
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless, slow_mo=slow_mo_ms)
+        context = browser.new_context()
+        page = context.new_page()
+        page.set_default_timeout(timeout_ms)
+        try:
+            yield page
+        finally:
+            context.close()
+            browser.close()
