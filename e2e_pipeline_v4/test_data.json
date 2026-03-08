@@ -1,0 +1,57 @@
+{
+  "base_url": "https://your-app-url.example",
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "selectors": {
+    "username_input": "#username",
+    "password_input": "#password",
+    "login_button": "button[type='submit']",
+
+    "cart_button": "[data-test='cart']",
+    "checkout_button": "[data-test='checkout']",
+
+    "payment_method_card": "[data-test='pay-card']",
+    "card_number_input": "#cardNumber",
+    "card_expiry_input": "#cardExpiry",
+    "card_cvv_input": "#cardCvv",
+    "pay_now_button": "[data-test='pay-now']",
+
+    "payment_success_banner": "[data-test='payment-success']",
+    "payment_error_banner": "[data-test='payment-error']",
+    "order_reference": "[data-test='order-reference']"
+  },
+  "payment": {
+    "valid_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "invalid_card": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "000"
+    }
+  },
+  "gateway": {
+    "sensitive_values": ["4111111111111111", "123", "4000000000000002", "000"],
+    "filter_domains": ["payments", "gateway"],
+    "allow_insecure": false
+  },
+  "api": {
+    "enabled": false,
+    "base_url": "https://your-api-url.example",
+    "order_status_endpoint": "/orders/{order_reference}",
+    "auth_header": {"Authorization": "Bearer <token>"}
+  },
+  "db": {
+    "enabled": false,
+    "dsn": "postgresql://user:pass@localhost:5432/dbname",
+    "order_status_query": "SELECT payment_status FROM orders WHERE order_reference = %s"
+  },
+  "timeouts": {
+    "navigation_ms": 30000,
+    "action_ms": 15000
+  }
+}
