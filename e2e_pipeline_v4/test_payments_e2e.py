@@ -20,7 +20,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pytest
 import requests
@@ -78,7 +78,9 @@ class GatewaySecurityMonitor:
 
         for url in self._seen_requests:
             url_l = url.lower()
-            if self._filter_domains and not any(d in url_l for d in self._filter_domains):
+            if self._filter_domains and not any(
+                d in url_l for d in self._filter_domains
+            ):
                 continue
 
             if not self._allow_insecure and url_l.startswith("http://"):
@@ -178,7 +180,9 @@ def browser(playwright_instance: Playwright) -> Browser:
 
 
 @pytest.fixture()
-def page(browser: Browser, test_data: Dict[str, Any], request: pytest.FixtureRequest) -> Page:
+def page(
+    browser: Browser, test_data: Dict[str, Any], request: pytest.FixtureRequest
+) -> Page:
     timeouts = test_data.get("timeouts", {})
     navigation_ms = int(timeouts.get("navigation_ms", 30000))
     action_ms = int(timeouts.get("action_ms", 15000))
@@ -229,14 +233,18 @@ def _request_with_retries(
     backoff_s = 1
     last_exc: Optional[Exception] = None
 
-    for attempt in range(1, max_attempts + 1):
+    for _ in range(1, max_attempts + 1):
         try:
             resp = requests.request(method, url, headers=headers, timeout=timeout_s)
             if resp.status_code != 429:
                 return resp
 
             retry_after = resp.headers.get("Retry-After")
-            sleep_for = int(retry_after) if retry_after and retry_after.isdigit() else backoff_s
+            sleep_for = (
+                int(retry_after)
+                if retry_after and retry_after.isdigit()
+                else backoff_s
+            )
             time.sleep(sleep_for)
             backoff_s *= 2
         except Exception as exc:
@@ -260,7 +268,9 @@ def _fetch_order_status_api(test_data: Dict[str, Any], order_reference: str) -> 
     headers = api_cfg.get("auth_header") or {}
 
     if not base_url or "{order_reference}" not in endpoint_tpl:
-        pytest.skip("API verification enabled but api.base_url/order_status_endpoint not configured")
+        pytest.skip(
+            "API verification enabled but api.base_url/order_status_endpoint not configured"
+        )
 
     url = f"{base_url}{endpoint_tpl.format(order_reference=order_reference)}"
     resp = _request_with_retries("GET", url, headers=headers)
@@ -288,7 +298,9 @@ def _fetch_order_status_db(test_data: Dict[str, Any], order_reference: str) -> O
     dsn = str(db_cfg.get("dsn", "")).strip()
     query = str(db_cfg.get("order_status_query", "")).strip()
     if not dsn or not query:
-        pytest.skip("DB verification enabled but db.dsn/order_status_query not configured")
+        pytest.skip(
+            "DB verification enabled but db.dsn/order_status_query not configured"
+        )
 
     try:
         import psycopg2  # type: ignore
@@ -394,7 +406,9 @@ class TestCardPayments:
 class TestGatewaySecurity:
     """Automation scenario for gateway secure transmission (TC_04)."""
 
-    def test_tc_04_secure_payment_transmission_over_gateway(self, page: Page, test_data: Dict[str, Any]) -> None:
+    def test_tc_04_secure_payment_transmission_over_gateway(
+        self, page: Page, test_data: Dict[str, Any]
+    ) -> None:
         selectors = test_data.get("selectors", {})
         creds = test_data.get("credentials", {})
         payment = test_data.get("payment", {}).get("valid_card", {})
