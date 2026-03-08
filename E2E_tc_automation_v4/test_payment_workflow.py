@@ -265,3 +265,291 @@ def _capture_failure_artifacts(page: Page) -> None:
         LOGGER.exception("Captured failure artifacts: screenshot + HTML")
     except Exception:  # noqa: BLE001
         LOGGER.exception("Failed to capture Playwright failure artifacts")
+
+
+def _get_web_base_url(test_data: Dict[str, Any], env_config: EnvConfig) -> str:
+    web_cfg = test_data.get("web", {})
+    base_url = env_config.web_base_url or web_cfg.get("base_url", "")
+    if not base_url:
+        raise TestDataError("Missing web.base_url (or WEB_BASE_URL)")
+    return base_url
+
+
+def _get_timeouts(test_data: Dict[str, Any]) -> Dict[str, Any]:
+    return test_data.get("web", {}).get("timeouts", {"ui_ms": 20000, "payment_ms": 60000})
+
+
+def _get_selectors(test_data: Dict[str, Any]) -> Dict[str, str]:
+    selectors = test_data.get("web", {}).get("selectors", {})
+    if not selectors:
+        raise TestDataError("Missing web.selectors")
+    return selectors
+
+
+def _fill_card_details(checkout: CheckoutPage, card: Dict[str, str]) -> None:
+    page = checkout.page
+    selectors = checkout._sel  # noqa: SLF001 (allowed: single-file constraint)
+
+    page.fill(_required(selectors, "card_number"), _required(card, "number"))
+    page.fill(_required(selectors, "card_expiry"), _required(card, "expiry"))
+    page.fill(_required(selectors, "card_cvv"), _required(card, "cvv"))
+
+    name_sel = selectors.get("card_name")
+    if name_sel and card.get("name"):
+        page.fill(name_sel, card["name"])
+
+
+def _fill_wallet_details(checkout: CheckoutPage, wallet: Dict[str, str]) -> None:
+    page = checkout.page
+    selectors = checkout._sel  # noqa: SLF001
+
+    email_sel = selectors.get("wallet_email")
+    if email_sel and wallet.get("email"):
+        page.fill(email_sel, wallet["email"])
+
+    submit_sel = selectors.get("wallet_submit")
+    if submit_sel:
+        page.click(submit_sel)
+
+
+def _fill_net_banking_details(checkout: CheckoutPage, nb: Dict[str, str]) -> None:
+    page = checkout.page
+    selectors = checkout._sel  # noqa: SLF001
+
+    bank_sel = selectors.get("netbanking_bank")
+    if bank_sel and nb.get("bank"):
+        page.select_option(bank_sel, nb["bank"])
+
+    user_sel = selectors.get("netbanking_user")
+    if user_sel and nb.get("username"):
+        page.fill(user_sel, nb["username"])
+
+    pass_sel = selectors.get("netbanking_password")
+    if pass_sel and nb.get("password"):
+        page.fill(pass_sel, nb["password"])
+
+
+def _wait_for_error(checkout: CheckoutPage, expected_error_regex: str) -> None:
+    selectors = checkout._sel  # noqa: SLF001
+    timeout_ms = int(checkout._timeouts.get("ui_ms", 20000))  # noqa: SLF001
+    error_sel = selectors.get("payment_error")
+
+    if error_sel:
+        checkout.page.wait_for_selector(error_sel, timeout=timeout_ms)
+        msg = checkout.page.text_content(error_sel) or ""
+        if not re.search(expected_error_regex, msg, flags=re.IGNORECASE):
+            raise AssertionError(
+                f"Unexpected error message. Expected /{expected_error_regex}/, got: {msg!r}"
+            )
+        return
+
+    checkout.wait_for_status_text(expected_error_regex)
+
+
+def _maybe_extract_order_id(checkout: CheckoutPage) -> Optional[str]:
+    try:
+        return checkout.extract_order_id()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+class GatewayFailureSimulator:
+    """Simulates gateway/network failures via Playwright routing."""
+
+    def __init__(self, page: Page, url_pattern: str, mode: str) -> None:
+        self._page = page
+        self._url_pattern = url_pattern
+        self._mode = mode
+
+    def __enter__(self) -> "GatewayFailureSimulator":
+        def handler(route, request) -> None:  # noqa: ANN001
+            _ = request
+            if self._mode == "abort":
+                route.abort("failed")
+                return
+            if self._mode == "fulfill_502":
+                route.fulfill(status=502, body="Bad Gateway")
+                return
+            raise TestDataError(
+                f"Unsupported gateway failure mode: {self._mode!r} (use abort|fulfill_502)"
+            )
+
+        self._page.route(self._url_pattern, handler)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        try:
+            self._page.unroute(self._url_pattern)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Failed to unroute gateway pattern: %s", self._url_pattern)
+
+
+@pytest.fixture()
+def checkout(browser_page: Page, test_data: Dict[str, Any], env_config: EnvConfig) -> CheckoutPage:
+    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
+    base_url = _get_web_base_url(test_data, env_config)
+    web_cfg = test_data.get("web", {})
+
+    selectors = _get_selectors(test_data)
+    timeouts = _get_timeouts(test_data)
+
+    creds = web_cfg.get("credentials", {})
+    username = creds.get("username", os.getenv("WEB_USERNAME", ""))
+    password = creds.get("password", os.getenv("WEB_PASSWORD", ""))
+
+    checkout_page = CheckoutPage(browser_page, selectors=selectors, timeouts=timeouts)
+
+    if username and password:
+        checkout_page.login_if_needed(base_url=base_url, username=username, password=password)
+
+    checkout_page.goto_checkout(base_url=base_url)
+    return checkout_page
+
+
+class TestPaymentWorkflow:
+    """Automation scenarios from pipeline_testcase_v1.xlsx: TC_01..TC_03."""
+
+    def test_tc_01_happy_path_success_all_methods(
+        self,
+        checkout: CheckoutPage,
+        test_data: Dict[str, Any],
+        env_config: EnvConfig,
+        api_client: Optional[PaymentApiClient],
+        db_client: Optional[PostgresClient],
+    ) -> None:
+        base_url = _get_web_base_url(test_data, env_config)
+        selectors = _get_selectors(test_data)
+        timeouts = _get_timeouts(test_data)
+
+        payment_cfg = _required(test_data, "payments")
+        methods: List[str] = ["card", "wallet", "net_banking"]
+
+        failures: List[str] = []
+        for method in methods:
+            try:
+                checkout.goto_checkout(base_url=base_url)
+                checkout.select_payment_method(method)
+
+                if method == "card":
+                    _fill_card_details(checkout, _required(payment_cfg, "card"))
+                elif method == "wallet":
+                    _fill_wallet_details(checkout, _required(payment_cfg, "wallet"))
+                elif method == "net_banking":
+                    _fill_net_banking_details(checkout, _required(payment_cfg, "net_banking"))
+                else:
+                    raise TestDataError(f"Unsupported payment method key: {method}")
+
+                checkout.click_pay()
+                checkout.wait_for_status_text(r"success|paid|completed")
+
+                order_id = checkout.extract_order_id()
+                LOGGER.info("Payment succeeded via %s; order_id=%s", method, order_id)
+
+                if api_client:
+                    order_ep = _required(_required(test_data, "api").get("endpoints", {}), "order_status")
+                    status_json = api_client.get_order_status(order_ep, order_id)
+                    status_value = str(status_json.get("status", "")).lower()
+                    assert status_value in {"paid", "success", "completed"}, status_json
+
+                if db_client:
+                    q = test_data.get("db", {}).get("queries", {}).get("successful_charge_count")
+                    if q:
+                        count = db_client.fetch_value(q, [order_id])
+                        assert int(count or 0) == 1, f"Expected one successful charge, got {count}"
+
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"{method}: {exc}")
+
+        assert not failures, "\n".join(failures)
+
+    def test_tc_02_invalid_card_inputs_blocked(
+        self,
+        checkout: CheckoutPage,
+        test_data: Dict[str, Any],
+        env_config: EnvConfig,
+    ) -> None:
+        base_url = _get_web_base_url(test_data, env_config)
+        invalid_cards = test_data.get("invalid_cards", [])
+        if not invalid_cards:
+            pytest.skip("No invalid_cards provided in test_data.json")
+
+        failures: List[str] = []
+        for variant in invalid_cards:
+            name = variant.get("name", "unnamed")
+            try:
+                checkout.goto_checkout(base_url=base_url)
+                checkout.select_payment_method("card")
+                _fill_card_details(checkout, variant)
+                checkout.click_pay()
+
+                expected_re = _required(variant, "expected_error_regex")
+                _wait_for_error(checkout, expected_error_regex=expected_re)
+
+                order_id = _maybe_extract_order_id(checkout)
+                if order_id:
+                    raise AssertionError(
+                        f"Order id should not be created for invalid card input; got {order_id}"
+                    )
+
+                status_text = checkout.page.text_content(_required(checkout._sel, "payment_status")) or ""  # noqa: SLF001
+                if re.search(r"success|paid|completed", status_text, flags=re.IGNORECASE):
+                    raise AssertionError(f"Payment unexpectedly succeeded for variant: {name}")
+
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"{name}: {exc}")
+
+        assert not failures, "\n".join(failures)
+
+    def test_tc_03_gateway_or_network_failure_no_duplicate_on_retry(
+        self,
+        checkout: CheckoutPage,
+        test_data: Dict[str, Any],
+        env_config: EnvConfig,
+        api_client: Optional[PaymentApiClient],
+        db_client: Optional[PostgresClient],
+    ) -> None:
+        base_url = _get_web_base_url(test_data, env_config)
+
+        gw = test_data.get("gateway_failure", {})
+        url_pattern = gw.get("route_url_pattern")
+        mode = gw.get("mode", "abort")
+        if not url_pattern:
+            pytest.skip("gateway_failure.route_url_pattern not configured")
+
+        payment_cfg = _required(test_data, "payments")
+
+        # 1) Trigger failure
+        checkout.goto_checkout(base_url=base_url)
+        checkout.select_payment_method("card")
+        _fill_card_details(checkout, _required(payment_cfg, "card"))
+
+        with GatewayFailureSimulator(checkout.page, url_pattern=url_pattern, mode=mode):
+            checkout.click_pay()
+            checkout.wait_for_status_text(r"fail|failed|declined|error")
+            _wait_for_error(checkout, expected_error_regex=r"retry|failed|error")
+
+        status_text = checkout.page.text_content(_required(checkout._sel, "payment_status")) or ""  # noqa: SLF001
+        assert not re.search(r"success|paid|completed", status_text, flags=re.IGNORECASE)
+
+        # 2) Retry (should succeed) and ensure no duplicates
+        checkout.goto_checkout(base_url=base_url)
+        checkout.select_payment_method("card")
+        _fill_card_details(checkout, _required(payment_cfg, "card"))
+        checkout.click_pay()
+        checkout.wait_for_status_text(r"success|paid|completed")
+
+        order_id = checkout.extract_order_id()
+        LOGGER.info("Retry succeeded; order_id=%s", order_id)
+
+        if api_client:
+            order_ep = _required(_required(test_data, "api").get("endpoints", {}), "order_status")
+            status_json = api_client.get_order_status(order_ep, order_id)
+            status_value = str(status_json.get("status", "")).lower()
+            assert status_value in {"paid", "success", "completed"}, status_json
+
+        if db_client:
+            q = test_data.get("db", {}).get("queries", {}).get("successful_charge_count")
+            if q:
+                count = db_client.fetch_value(q, [order_id])
+                assert int(count or 0) == 1, f"Expected one successful charge, got {count}"
