@@ -1,0 +1,74 @@
+{
+  "app": {
+    "base_url": "https://your-app-under-test.example",
+    "checkout_path": "/checkout"
+  },
+  "auth": {
+    "login_path": "/login",
+    "username": "test_user",
+    "password": "test_pass",
+    "selectors": {
+      "username_input": "[data-test='username']",
+      "password_input": "[data-test='password']",
+      "submit_button": "[data-test='login-submit']"
+    }
+  },
+  "checkout": {
+    "selectors": {
+      "payment_method_open": "[data-test='payment-method-open']",
+      "payment_method_card": "[data-test='payment-method-card']",
+      "payment_method_wallet": "[data-test='payment-method-wallet']",
+      "payment_method_net_banking": "[data-test='payment-method-netbanking']",
+      "card_number": "[data-test='card-number']",
+      "card_expiry": "[data-test='card-expiry']",
+      "card_cvv": "[data-test='card-cvv']",
+      "card_name": "[data-test='card-name']",
+      "pay_button": "[data-test='pay-confirm']",
+      "payment_status": "[data-test='payment-status']",
+      "payment_error": "[data-test='payment-error']",
+      "order_id": "[data-test='order-id']"
+    },
+    "expected_error_substrings": [
+      "payment failed",
+      "declined",
+      "insufficient",
+      "try again"
+    ]
+  },
+  "gateway": {
+    "request_url_substring": "gateway",
+    "sensitive_query_param_keys": [
+      "card",
+      "card_number",
+      "pan",
+      "cvv",
+      "cvc",
+      "expiry",
+      "exp"
+    ]
+  },
+  "payment_data": {
+    "valid_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "invalid_card": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    }
+  },
+  "api": {
+    "stub_config_endpoint": "",
+    "payment_status_endpoint": "",
+    "timeout_seconds": 90,
+    "poll_interval_seconds": 3
+  },
+  "db": {
+    "dsn": "",
+    "payments_status_query": "SELECT status FROM payments WHERE order_id = %s ORDER BY created_at DESC LIMIT 1"
+  }
+}
