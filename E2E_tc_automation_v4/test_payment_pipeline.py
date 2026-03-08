@@ -329,6 +329,28 @@ def wait_for_status_text(page: Page, selector: str, expected: str, timeout_ms: i
     raise AssertionError(f"Timed out waiting for status '{expected}'. Last seen: '{actual}'")
 
 
+def wait_for_any_status_text(
+    page: Page,
+    selector: str,
+    expected_any: List[str],
+    timeout_ms: int,
+) -> str:
+    """Wait until the status element contains any of the expected strings.
+
+    Returns the matched expected string.
+    """
+
+    last_error: Optional[Exception] = None
+    for expected in expected_any:
+        try:
+            wait_for_status_text(page, selector=selector, expected=expected, timeout_ms=timeout_ms)
+            return expected
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+
+    raise AssertionError(f"None of {expected_any} appeared in status within timeout") from last_error
+
+
 def maybe_configure_gateway_stub(cfg: TestConfig, scenario: str) -> None:
     """Optional: configure gateway sandbox/stub to a given scenario via API."""
 
