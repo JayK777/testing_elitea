@@ -1,0 +1,111 @@
+{
+  "web": {
+    "base_url": "https://example.test",
+    "headless": true,
+    "slow_mo_ms": 0,
+    "ignore_https_errors": false,
+    "timeouts": {
+      "ui_ms": 20000,
+      "payment_ms": 90000
+    },
+    "credentials": {
+      "username": "test_user",
+      "password": "test_password"
+    },
+    "selectors": {
+      "login_path": "/login",
+      "checkout_path": "/checkout",
+
+      "login_username": "#username",
+      "login_password": "#password",
+      "login_submit": "button[type='submit']",
+      "logged_in_marker": "[data-test='nav-account']",
+
+      "payment_card": "[data-test='payment-method-card']",
+      "payment_wallet": "[data-test='payment-method-wallet']",
+      "payment_net_banking": "[data-test='payment-method-netbanking']",
+
+      "card_number": "#cardNumber",
+      "card_expiry": "#cardExpiry",
+      "card_cvv": "#cardCvv",
+      "card_name": "#cardName",
+
+      "wallet_email": "#walletEmail",
+      "wallet_submit": "[data-test='wallet-submit']",
+
+      "netbanking_bank": "#bankSelect",
+      "netbanking_user": "#bankUser",
+      "netbanking_password": "#bankPassword",
+
+      "pay_button": "[data-test='pay-now']",
+      "payment_status": "[data-test='payment-status']",
+      "payment_error": "[data-test='payment-error']",
+      "order_id": "[data-test='order-id']"
+    }
+  },
+  "payments": {
+    "card": {
+      "number": "4242424242424242",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "wallet": {
+      "email": "wallet_user@example.test"
+    },
+    "net_banking": {
+      "bank": "TEST_BANK",
+      "username": "netbank_user",
+      "password": "netbank_password"
+    }
+  },
+  "invalid_cards": [
+    {
+      "name": "expired_card",
+      "number": "4242424242424242",
+      "expiry": "01/20",
+      "cvv": "123",
+      "expected_error_regex": "expired|invalid"
+    },
+    {
+      "name": "invalid_pan_format",
+      "number": "123",
+      "expiry": "12/30",
+      "cvv": "123",
+      "expected_error_regex": "card number|invalid"
+    },
+    {
+      "name": "cvv_too_short",
+      "number": "4242424242424242",
+      "expiry": "12/30",
+      "cvv": "12",
+      "expected_error_regex": "cvv|invalid"
+    },
+    {
+      "name": "cvv_too_long",
+      "number": "4242424242424242",
+      "expiry": "12/30",
+      "cvv": "12345",
+      "expected_error_regex": "cvv|invalid"
+    }
+  ],
+  "gateway_failure": {
+    "route_url_pattern": "**/payment-gateway/**",
+    "mode": "abort"
+  },
+  "api": {
+    "base_url": "",
+    "token": "",
+    "timeout_s": 20,
+    "endpoints": {
+      "order_status": "/api/orders/{order_id}"
+    }
+  },
+  "db": {
+    "enabled": false,
+    "dsn": "postgresql://user:pass@host:5432/dbname",
+    "queries": {
+      "successful_charge_count": "SELECT COUNT(1) FROM payments WHERE order_id = %s AND status = 'SUCCESS'"
+    }
+  }
+}
