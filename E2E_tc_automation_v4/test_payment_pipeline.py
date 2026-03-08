@@ -176,11 +176,15 @@ def load_test_config() -> TestConfig:
         ),
         checkout=CheckoutConfig(
             selectors=checkout_sel,
-            expected_error_substrings=raw["checkout"].get("expected_error_substrings", []),
+            expected_error_substrings=raw["checkout"].get(
+                "expected_error_substrings", []
+            ),
         ),
         gateway=GatewayConfig(
             request_url_substring=raw["gateway"]["request_url_substring"],
-            sensitive_query_param_keys=raw["gateway"].get("sensitive_query_param_keys", []),
+            sensitive_query_param_keys=raw["gateway"].get(
+                "sensitive_query_param_keys", []
+            ),
         ),
         payment_data=PaymentData(
             valid_card=CardData(**raw["payment_data"]["valid_card"]),
@@ -343,7 +347,12 @@ def wait_for_any_status_text(
     last_error: Optional[Exception] = None
     for expected in expected_any:
         try:
-            wait_for_status_text(page, selector=selector, expected=expected, timeout_ms=timeout_ms)
+            wait_for_status_text(
+                page,
+                selector=selector,
+                expected=expected,
+                timeout_ms=timeout_ms,
+            )
             return expected
         except Exception as exc:  # noqa: BLE001
             last_error = exc
@@ -362,7 +371,11 @@ def maybe_configure_gateway_stub(cfg: TestConfig, scenario: str) -> None:
     try:
         resp = requests.post(cfg.api.stub_config_endpoint, json=payload, timeout=15)
         resp.raise_for_status()
-        LOGGER.info("Configured gateway stub scenario '%s' via %s", scenario, cfg.api.stub_config_endpoint)
+        LOGGER.info(
+            "Configured gateway stub scenario '%s' via %s",
+            scenario,
+            cfg.api.stub_config_endpoint,
+        )
     except Exception as exc:  # noqa: BLE001
         raise AssertionError(f"Failed to configure gateway stub: {exc}") from exc
 
@@ -438,7 +451,11 @@ def maybe_fetch_db_payment_status(cfg: TestConfig, order_id: str) -> Optional[st
 
 def _get_order_id_if_present(page: Page, cfg: TestConfig) -> Optional[str]:
     try:
-        text = page.locator(cfg.checkout.selectors.order_id).inner_text(timeout=2000).strip()
+        text = (
+            page.locator(cfg.checkout.selectors.order_id)
+            .inner_text(timeout=2000)
+            .strip()
+        )
         return text or None
     except Exception:  # noqa: BLE001
         return None
@@ -557,7 +574,11 @@ class TestPaymentFailure:
 
             error_text = ""
             try:
-                error_text = page.locator(config.checkout.selectors.payment_error).inner_text(timeout=10_000).strip()
+                error_text = (
+                    page.locator(config.checkout.selectors.payment_error)
+                    .inner_text(timeout=10_000)
+                    .strip()
+                )
             except Exception:  # noqa: BLE001
                 error_text = ""
 
