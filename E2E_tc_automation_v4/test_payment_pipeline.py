@@ -420,3 +420,134 @@ def _get_order_id_if_present(page: Page, cfg: TestConfig) -> Optional[str]:
         return text or None
     except Exception:  # noqa: BLE001
         return None
+
+
+class TestPaymentStatusFlow:
+    """TC_01 + TC_03: Success and Pending->Final transitions."""
+
+    def test_tc01_happy_path_success_with_secure_gateway(self, page: Page, config: TestConfig) -> None:
+        captured = capture_gateway_requests(page, config)
+
+        try:
+            login(page, config)
+            open_checkout(page, config)
+
+            select_card_payment(page, config)
+            fill_card_details(page, config, config.payment_data.valid_card)
+
+            click_pay(page, config)
+
+            # Real-time status (best-effort): look for Processing or Pending soon after Pay.
+            wait_for_status_text(
+                page,
+                selector=config.checkout.selectors.payment_status,
+                expected="processing",
+                timeout_ms=15_000,
+            )
+
+            wait_for_status_text(
+                page,
+                selector=config.checkout.selectors.payment_status,
+                expected="success",
+                timeout_ms=config.api.timeout_seconds * 1000,
+            )
+
+            assert captured, (
+                "No gateway-like requests captured. Update gateway.request_url_substring in test_data.json "
+                "to match your gateway host/path."
+            )
+
+            for url in captured:
+                _assert_gateway_request_is_secure(config, url)
+
+            order_id = _get_order_id_if_present(page, config)
+            if order_id:
+                api_status = maybe_poll_payment_status_api(config, order_id)
+                if api_status:
+                    assert api_status.lower() == "success"
+
+                db_status = maybe_fetch_db_payment_status(config, order_id)
+                if db_status:
+                    assert db_status.lower() == "success"
+
+        except Exception:  # noqa: BLE001
+            _safe_screenshot(page, "tc01_failure")
+            raise
+
+    def test_tc03_pending_then_final_status(self, page: Page, config: TestConfig) -> None:
+        """Requires gateway sandbox/stub to return Pending then Success/Failure."""
+
+        try:
+            maybe_configure_gateway_stub(config, scenario="pending_then_success")
+
+            login(page, config)
+            open_checkout(page, config)
+
+            select_card_payment(page, config)
+            fill_card_details(page, config, config.payment_data.valid_card)
+            click_pay(page, config)
+
+            wait_for_status_text(
+                page,
+                selector=config.checkout.selectors.payment_status,
+                expected="pending",
+                timeout_ms=40_000,
+            )
+
+            wait_for_status_text(
+                page,
+                selector=config.checkout.selectors.payment_status,
+                expected="success",
+                timeout_ms=config.api.timeout_seconds * 1000,
+            )
+
+            order_id = _get_order_id_if_present(page, config)
+            if order_id:
+                api_status = maybe_poll_payment_status_api(config, order_id)
+                if api_status:
+                    assert api_status.lower() in {"success", "failure", "failed"}
+
+        except Exception:  # noqa: BLE001
+            _safe_screenshot(page, "tc03_failure")
+            raise
+
+
+class TestPaymentFailure:
+    """TC_04: Failure state and clear error messaging."""
+
+    def test_tc04_payment_failure_shows_informative_error(self, page: Page, config: TestConfig) -> None:
+        try:
+            maybe_configure_gateway_stub(config, scenario="failure")
+
+            login(page, config)
+            open_checkout(page, config)
+
+            select_card_payment(page, config)
+            fill_card_details(page, config, config.payment_data.invalid_card)
+            click_pay(page, config)
+
+            wait_for_status_text(
+                page,
+                selector=config.checkout.selectors.payment_status,
+                expected="fail",
+                timeout_ms=config.api.timeout_seconds * 1000,
+            )
+
+            error_text = ""
+            try:
+                error_text = page.locator(config.checkout.selectors.payment_error).inner_text(timeout=10_000).strip()
+            except Exception:  # noqa: BLE001
+                error_text = ""
+
+            assert error_text, "Expected an error message on failure, but none was found."
+
+            lowered = error_text.lower()
+            expected_substrings = [s.lower() for s in config.checkout.expected_error_substrings]
+            assert any(s in lowered for s in expected_substrings), (
+                "Error message is not informative enough. "
+                f"Actual: '{error_text}'. Expected to contain one of: {expected_substrings}"
+            )
+
+        except Exception:  # noqa: BLE001
+            _safe_screenshot(page, "tc04_failure")
+            raise
