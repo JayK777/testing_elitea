@@ -460,10 +460,10 @@ class TestPaymentStatusFlow:
             click_pay(page, config)
 
             # Real-time status (best-effort): look for Processing or Pending soon after Pay.
-            wait_for_status_text(
+            wait_for_any_status_text(
                 page,
                 selector=config.checkout.selectors.payment_status,
-                expected="processing",
+                expected_any=["processing", "pending"],
                 timeout_ms=15_000,
             )
 
