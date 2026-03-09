@@ -1,0 +1,62 @@
+{
+  "selectors": {
+    "checkout_path": "/checkout",
+    "payment_status": "[data-testid='payment-status']",
+    "order_reference": "[data-testid='order-id']",
+    "pay_button": "[data-testid='pay-now']",
+
+    "payment_method_selectors": {
+      "card": "[data-testid='payment-method-card']",
+      "wallet": "[data-testid='payment-method-wallet']",
+      "net_banking": "[data-testid='payment-method-netbanking']"
+    },
+
+    "card_number": "[data-testid='card-number']",
+    "card_expiry": "[data-testid='card-expiry']",
+    "card_cvv": "[data-testid='card-cvv']",
+    "card_name": "[data-testid='card-holder-name']"
+  },
+
+  "login": {
+    "path": "/login",
+    "username": "[data-testid='username']",
+    "password": "[data-testid='password']",
+    "submit": "[data-testid='login-submit']",
+    "post_login": "[data-testid='user-avatar']"
+  },
+
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+
+  "api": {
+    "endpoints": {
+      "order_status": "/v1/orders"
+    }
+  },
+
+  "tc01": {
+    "method": "card",
+    "ui_timeout_seconds": 60,
+    "card": {
+      "number": "4242424242424242",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    }
+  },
+
+  "tc03": {
+    "method": "card",
+    "pending_timeout_seconds": 20,
+    "overall_timeout_seconds": 90,
+    "retry_timeout_seconds": 90,
+    "card": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Timeout User"
+    }
+  }
+}
