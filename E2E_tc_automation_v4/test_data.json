@@ -1,0 +1,73 @@
+{
+  "ui": {
+    "base_url": "https://your-app-under-test.example",
+    "timeout_ms": 30000,
+    "pending_timeout_ms": 90000,
+    "final_timeout_ms": 120000,
+    "cancelled_status_texts": ["Refunded", "Cancelled"],
+    "paths": {
+      "login": "/login",
+      "catalog": "/catalog"
+    },
+    "selectors": {
+      "login_username": "input[name='username']",
+      "login_password": "input[name='password']",
+      "login_submit": "button[type='submit']",
+      "logged_in_indicator": "css=[data-testid='user-avatar']",
+
+      "add_to_cart": "css=[data-testid='add-to-cart']",
+      "cart_open": "css=[data-testid='open-cart']",
+      "checkout_start": "css=[data-testid='start-checkout']",
+
+      "payment_method_credit_card": "css=[data-testid='payment-credit-card']",
+      "payment_method_wallet": "css=[data-testid='payment-wallet']",
+
+      "card_number": "input[name='cardNumber']",
+      "card_expiry": "input[name='cardExpiry']",
+      "card_cvv": "input[name='cardCvv']",
+      "card_name": "input[name='cardName']",
+
+      "pay_submit": "css=[data-testid='pay-submit']",
+      "payment_status": "css=[data-testid='payment-status']",
+      "order_id": "css=[data-testid='order-id']",
+
+      "order_cancel": "css=[data-testid='cancel-order']",
+      "order_cancel_confirm": "css=[data-testid='confirm-cancel']"
+    }
+  },
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "payment": {
+    "credit_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "failure": {
+      "method_selector_key": "payment_method_credit_card",
+      "fields": {
+        "card_number": "4000000000000002",
+        "card_expiry": "12/30",
+        "card_cvv": "123"
+      }
+    }
+  },
+  "api": {
+    "base_url": "https://your-app-under-test.example",
+    "order_status_path": "/api/orders/{order_id}",
+    "token": "",
+    "expected_status_key": "status",
+    "expected_paid_status_values": ["SUCCESS", "PAID"]
+  },
+  "db": {
+    "host": "",
+    "port": 5432,
+    "database": "",
+    "user": "",
+    "password": "",
+    "duplicate_payment_count_query": "SELECT COUNT(*) FROM payments WHERE order_id = '{order_id}';"
+  }
+}
