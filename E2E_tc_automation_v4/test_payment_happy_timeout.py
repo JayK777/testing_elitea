@@ -343,4 +343,5 @@ class TestPaymentFlow:
             if count is not None:
                 assert count == 1, "Duplicate charge/order detected for payment reference"
 
-        assert "success" in final_status.lower() or "paid" in final_status.lower() or "fail" in final_status.lower()
+        lowered = final_status.lower()
+        assert any(token in lowered for token in ("success", "paid", "fail"))
