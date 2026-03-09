@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,7 +150,7 @@ class PaymentPage:
 
     def goto_checkout(self, base_url: str) -> None:
         self._page.goto(f"{base_url}{self._s['checkout_path']}")
-        expect(self._page).to_have_url(lambda url: "checkout" in url)
+        expect(self._page).to_have_url(re.compile(r"checkout", re.IGNORECASE))
 
     def select_payment_method(self, method: str) -> None:
         method_selector = self._s["payment_method_selectors"][method]
