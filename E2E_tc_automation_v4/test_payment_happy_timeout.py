@@ -143,7 +143,7 @@ def page(browser: Browser, request: pytest.FixtureRequest) -> Page:
 
 
 class PaymentPage:
-    def __init__(self, page: Page, selectors: Dict[str, str]):
+    def __init__(self, page: Page, selectors: Dict[str, Any]):
         self._page = page
         self._s = selectors
 
@@ -163,6 +163,13 @@ class PaymentPage:
 
     def submit_payment(self) -> None:
         self._page.locator(self._s["pay_button"]).click()
+
+    def retry_payment(self) -> None:
+        retry_selector = self._s.get("retry_button")
+        if retry_selector:
+            self._page.locator(retry_selector).click()
+            return
+        self.submit_payment()
 
     def read_status_text(self) -> str:
         return self._page.locator(self._s["payment_status"]).inner_text().strip()
@@ -233,20 +240,33 @@ def db_count_orders_by_payment_ref(db_dsn: str, payment_reference: str) -> Optio
 class TestPaymentFlow:
     """Automation-tagged payment flow tests from pipeline_testcase_v2.xlsx."""
 
-    def _login_if_needed(self, page: Page, base_url: str, selectors: Dict[str, Any]) -> None:
-        login = selectors.get("login")
-        if not login:
+    def _login_if_needed(
+        self,
+        page: Page,
+        base_url: str,
+        test_data: Dict[str, Any],
+    ) -> None:
+        login = test_data.get("login")
+        credentials = test_data.get("credentials")
+        if not login or not credentials:
             return
 
         page.goto(f"{base_url}{login['path']}")
-        page.fill(login["username"], selectors["credentials"]["username"])
-        page.fill(login["password"], selectors["credentials"]["password"])
+        page.fill(login["username"], credentials["username"])
+        page.fill(login["password"], credentials["password"])
         page.locator(login["submit"]).click()
 
-        if "post_login" in login:
-            expect(page.locator(login["post_login"])).to_be_visible(timeout=15_000)
+        post_login = login.get("post_login")
+        if post_login:
+            expect(page.locator(post_login)).to_be_visible(timeout=15_000)
 
-    def test_tc01_happy_path_supported_payment(self, page: Page, config: RuntimeConfig, test_data: Dict[str, Any]):
+    def test_tc01_happy_path_supported_payment(
+        self,
+        page: Page,
+        config: RuntimeConfig,
+        test_data: Dict[str, Any],
+        http_session: requests.Session,
+    ):
         selectors = test_data["selectors"]
         self._login_if_needed(page, config.app_base_url, test_data)
 
@@ -270,14 +290,20 @@ class TestPaymentFlow:
         order_id = payment_page.get_order_reference()
         if order_id and test_data.get("api", {}).get("endpoints", {}).get("order_status"):
             status_payload = api_get_order_status(
-                http_session=requests.Session(),
+                http_session=http_session,
                 api_base_url=config.api_base_url,
                 order_id=order_id,
                 endpoints=test_data["api"]["endpoints"],
             )
             assert status_payload.get("status") in {"SUCCESS", "PAID", "CONFIRMED"}
 
-    def test_tc03_timeout_handling_and_safe_retry(self, page: Page, config: RuntimeConfig, test_data: Dict[str, Any]):
+    def test_tc03_timeout_handling_and_safe_retry(
+        self,
+        page: Page,
+        config: RuntimeConfig,
+        test_data: Dict[str, Any],
+        http_session: requests.Session,
+    ):
         selectors = test_data["selectors"]
         self._login_if_needed(page, config.app_base_url, test_data)
 
@@ -305,7 +331,7 @@ class TestPaymentFlow:
 
         payment_reference = payment_page.get_order_reference() or ""
 
-        payment_page.submit_payment()
+        payment_page.retry_payment()
 
         final_status = payment_page.wait_for_status(
             expected=("success", "paid", "confirmed", "failed"),
