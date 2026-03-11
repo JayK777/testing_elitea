@@ -275,7 +275,9 @@ def _build_configs(raw: Dict[str, Any]) -> tuple[WebConfig, ApiConfig, DbConfig]
         name for name in required_card_selectors if not card_selectors.get(name)
     ]
     if missing_card:
-        raise ConfigError(f"Missing required card selectors in test_data.json: {missing_card}")
+        raise ConfigError(
+            f"Missing required card selectors in test_data.json: {missing_card}"
+        )
 
     web_config = WebConfig(
         base_url=str(web.get("base_url", "")).strip(),
@@ -301,7 +303,9 @@ def _build_configs(raw: Dict[str, Any]) -> tuple[WebConfig, ApiConfig, DbConfig]
         base_url=str(api.get("base_url", "")).strip(),
         timeout_seconds=int(api.get("timeout_seconds", 20)),
         get_order_path=str(endpoints.get("get_order", "/orders/{order_id}")),
-        cancel_order_path=str(endpoints.get("cancel_order", "/orders/{order_id}/cancel")),
+        cancel_order_path=str(
+            endpoints.get("cancel_order", "/orders/{order_id}/cancel")
+        ),
         bearer_token=bearer_token,
     )
 
@@ -436,7 +440,9 @@ def cards(raw_test_data: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
     invalid = cards_data.get("invalid")
 
     if not isinstance(valid, dict) or not isinstance(invalid, dict):
-        raise ConfigError("cards.valid and cards.invalid must be present in test_data.json")
+        raise ConfigError(
+            "cards.valid and cards.invalid must be present in test_data.json"
+        )
 
     return {
         "valid": {
@@ -465,14 +471,23 @@ class TestCardPayments:
         configs: tuple[WebConfig, ApiConfig, DbConfig],
         cards: Dict[str, Dict[str, str]],
     ) -> None:
-        order_id = _create_paid_order(page=page, web_config=web_config, card=cards["valid"])
+        order_id = _create_paid_order(
+            page=page,
+            web_config=web_config,
+            card=cards["valid"],
+        )
         LOGGER.info("Created paid order_id=%s", order_id)
 
         _, api_config, _ = configs
         if api_config.base_url:
             order = backend_verifier.get_order(order_id)
             status = str(order.get("status", "")).lower()
-            _assert_contains(status, ["paid", "success", "completed"], "Order status mismatch")
+            expected_statuses = ["paid", "success", "completed"]
+            _assert_contains(
+                status,
+                expected_statuses,
+                "Order status mismatch",
+            )
 
         db_status = backend_verifier.get_payment_status_from_db(order_id)
         if db_status is not None:
@@ -504,7 +519,10 @@ class TestCardPayments:
             "Expected a clear decline/validation message",
         )
 
-        assert not page.locator(web_config.selectors["payment_success_message"]).is_visible()
+        success_locator = page.locator(
+            web_config.selectors["payment_success_message"]
+        )
+        assert not success_locator.is_visible()
 
 
 class TestRefundCancellation:
@@ -520,9 +538,13 @@ class TestRefundCancellation:
     ) -> None:
         _, api_config, _ = configs
         if not api_config.base_url:
-            pytest.skip("API base_url is not configured; cannot trigger cancellation/refund")
+            pytest.skip("API base_url not configured")
 
-        order_id = _create_paid_order(page=page, web_config=web_config, card=cards["valid"])
+        order_id = _create_paid_order(
+            page=page,
+            web_config=web_config,
+            card=cards["valid"],
+        )
         LOGGER.info("Created order eligible for cancellation/refund: %s", order_id)
 
         cancel_response = backend_verifier.cancel_order(order_id)
