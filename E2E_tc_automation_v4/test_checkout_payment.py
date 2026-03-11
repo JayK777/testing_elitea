@@ -30,10 +30,20 @@ from typing import Any, Dict, Optional
 import pytest
 
 try:
-    from playwright.sync_api import Browser, Page, Playwright, sync_playwright
+    from playwright.sync_api import Page, sync_playwright
 except ImportError:  # pragma: no cover
-    Browser = Page = Playwright = object  # type: ignore
+    Page = object  # type: ignore
     sync_playwright = None  # type: ignore
+
+try:
+    import requests
+except ImportError:  # pragma: no cover
+    requests = None  # type: ignore
+
+try:
+    import psycopg2
+except ImportError:  # pragma: no cover
+    psycopg2 = None  # type: ignore
 
 
 LOGGER = logging.getLogger(__name__)
@@ -254,20 +264,31 @@ def _pay_by_wallet(page: Page, config: TestConfig) -> None:
 class TestCheckoutPayment:
     """Automation scenarios tagged as A in the EP-31 sheet."""
 
-    def test_tc_01_happy_path_payment_success(self, page: Page, config: TestConfig) -> None:
+    def test_tc_01_happy_path_payment_success(
+        self,
+        page: Page,
+        config: TestConfig,
+    ) -> None:
         try:
             _login(page, config)
             _start_checkout(page, config)
             _pay_by_card(page, config, config.payment.valid_card)
 
-            page.wait_for_selector(_selector(config, "order_confirmation"), timeout=60000)
+            page.wait_for_selector(
+                _selector(config, "order_confirmation"),
+                timeout=60000,
+            )
             status_text = page.inner_text(_selector(config, "payment_status"))
             assert config.payment.success_text in status_text
         except Exception as exc:
             shot = _safe_screenshot(page, "tc_01_failure")
             pytest.fail(f"TC_01 failed: {exc}. Screenshot: {shot}")
 
-    def test_tc_02_invalid_card_rejected(self, page: Page, config: TestConfig) -> None:
+    def test_tc_02_invalid_card_rejected(
+        self,
+        page: Page,
+        config: TestConfig,
+    ) -> None:
         try:
             _login(page, config)
             _start_checkout(page, config)
@@ -307,7 +328,10 @@ class TestCheckoutPayment:
             assert config.payment.gateway_timeout.pending_text in status_initial
 
             page.wait_for_function(
-                "(sel, finalText) => document.querySelector(sel)?.innerText?.includes(finalText)",
+                (
+                    "(sel, finalText) => document.querySelector(sel)"
+                    "?.innerText?.includes(finalText)"
+                ),
                 arg=(
                     _selector(config, "payment_status"),
                     config.payment.gateway_timeout.final_failure_text,
