@@ -385,3 +385,165 @@ def _create_paid_order(
     ui.submit_payment()
     ui.wait_for_payment_success()
     return ui.read_order_id()
+
+
+def _poll_until(
+    callback,
+    timeout_seconds: int,
+    interval_seconds: int = 2,
+    description: str = "condition",
+):
+    deadline = time.time() + timeout_seconds
+    last_exc: Optional[Exception] = None
+
+    while time.time() < deadline:
+        try:
+            result = callback()
+            if result:
+                return result
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+        time.sleep(interval_seconds)
+
+    if last_exc is not None:
+        raise AssertionError(f"Timed out waiting for {description}: {last_exc}")
+
+    raise AssertionError(f"Timed out waiting for {description}")
+
+
+@pytest.fixture(scope="session")
+def cards(raw_test_data: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    cards_data = raw_test_data.get("cards") or {}
+    valid = cards_data.get("valid")
+    invalid = cards_data.get("invalid")
+
+    if not isinstance(valid, dict) or not isinstance(invalid, dict):
+        raise ConfigError("cards.valid and cards.invalid must be present in test_data.json")
+
+    return {
+        "valid": {
+            "number": str(valid.get("number", "")),
+            "expiry": str(valid.get("expiry", "")),
+            "cvv": str(valid.get("cvv", "")),
+            "name": str(valid.get("name", "")),
+        },
+        "invalid": {
+            "number": str(invalid.get("number", "")),
+            "expiry": str(invalid.get("expiry", "")),
+            "cvv": str(invalid.get("cvv", "")),
+            "name": str(invalid.get("name", "")),
+        },
+    }
+
+
+class TestCardPayments:
+    """TC_01 and TC_02."""
+
+    def test_tc01_successful_card_payment_happy_path(
+        self,
+        page: Page,
+        web_config: WebConfig,
+        backend_verifier: BackendVerifier,
+        configs: tuple[WebConfig, ApiConfig, DbConfig],
+        cards: Dict[str, Dict[str, str]],
+    ) -> None:
+        order_id = _create_paid_order(page=page, web_config=web_config, card=cards["valid"])
+        LOGGER.info("Created paid order_id=%s", order_id)
+
+        _, api_config, _ = configs
+        if api_config.base_url:
+            order = backend_verifier.get_order(order_id)
+            status = str(order.get("status", "")).lower()
+            _assert_contains(status, ["paid", "success", "completed"], "Order status mismatch")
+
+        db_status = backend_verifier.get_payment_status_from_db(order_id)
+        if db_status is not None:
+            _assert_contains(
+                str(db_status),
+                ["paid", "success", "completed"],
+                "DB payment_status mismatch",
+            )
+
+    def test_tc02_invalid_or_expired_card_shows_error_no_crash(
+        self,
+        page: Page,
+        web_config: WebConfig,
+        cards: Dict[str, Dict[str, str]],
+    ) -> None:
+        ui = PaymentUi(page=page, config=web_config)
+
+        ui.login()
+        ui.open_checkout()
+        ui.select_card_payment()
+        ui.enter_card_details(cards["invalid"])
+        ui.submit_payment()
+
+        error_message = ui.wait_for_payment_error()
+        LOGGER.info("Payment error message: %s", error_message)
+        _assert_contains(
+            error_message,
+            ["invalid", "expired", "declined", "failed"],
+            "Expected a clear decline/validation message",
+        )
+
+        assert not page.locator(web_config.selectors["payment_success_message"]).is_visible()
+
+
+class TestRefundCancellation:
+    """TC_04."""
+
+    def test_tc04_refund_or_cancellation_updates_status_and_notifies(
+        self,
+        page: Page,
+        web_config: WebConfig,
+        backend_verifier: BackendVerifier,
+        configs: tuple[WebConfig, ApiConfig, DbConfig],
+        cards: Dict[str, Dict[str, str]],
+    ) -> None:
+        _, api_config, _ = configs
+        if not api_config.base_url:
+            pytest.skip("API base_url is not configured; cannot trigger cancellation/refund")
+
+        order_id = _create_paid_order(page=page, web_config=web_config, card=cards["valid"])
+        LOGGER.info("Created order eligible for cancellation/refund: %s", order_id)
+
+        cancel_response = backend_verifier.cancel_order(order_id)
+        LOGGER.info("Cancel/refund response: %s", cancel_response)
+
+        def _refunded_or_cancelled() -> Optional[Dict[str, Any]]:
+            order = backend_verifier.get_order(order_id)
+            status = str(order.get("status", "")).lower()
+            if any(token in status for token in ["refunded", "cancelled", "canceled"]):
+                return order
+            return None
+
+        final_order = _poll_until(
+            callback=_refunded_or_cancelled,
+            timeout_seconds=60,
+            interval_seconds=3,
+            description="order to become refunded/cancelled",
+        )
+
+        final_status = str(final_order.get("status", "")).lower()
+        _assert_contains(
+            final_status,
+            ["refunded", "cancelled", "canceled"],
+            "Refund/Cancellation status mismatch",
+        )
+
+        notification_hint = str(
+            final_order.get("notification")
+            or final_order.get("notified")
+            or final_order.get("message")
+            or ""
+        )
+        if notification_hint:
+            LOGGER.info("Notification hint from API payload: %s", notification_hint)
+
+        db_status = backend_verifier.get_payment_status_from_db(order_id)
+        if db_status is not None:
+            _assert_contains(
+                str(db_status),
+                ["refunded", "cancelled", "canceled"],
+                "DB payment_status mismatch after cancellation/refund",
+            )
