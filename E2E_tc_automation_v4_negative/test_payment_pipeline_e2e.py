@@ -31,7 +31,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import pytest
 import requests
@@ -87,7 +87,10 @@ class PaymentUi:
 
     def login(self) -> None:
         selectors = self._config.selectors
-        self._page.goto(self._config.base_url, timeout=self._config.timeouts["page_navigation_ms"])
+        self._page.goto(
+            self._config.base_url,
+            timeout=self._config.timeouts["page_navigation_ms"],
+        )
         self._page.fill(selectors["username_input"], self._config.username)
         self._page.fill(selectors["password_input"], self._config.password)
         self._page.click(selectors["submit_button"])
@@ -144,12 +147,19 @@ class BackendVerifier:
         self._db_config = db_config
 
     def get_order(self, order_id: str) -> Dict[str, Any]:
-        url = self._api_config.base_url.rstrip("/") + self._api_config.get_order_path.format(order_id=order_id)
+        url = (
+            self._api_config.base_url.rstrip("/")
+            + self._api_config.get_order_path.format(order_id=order_id)
+        )
         headers = {}
         if self._api_config.bearer_token:
             headers["Authorization"] = f"Bearer {self._api_config.bearer_token}"
 
-        response = requests.get(url, headers=headers, timeout=self._api_config.timeout_seconds)
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=self._api_config.timeout_seconds,
+        )
         response.raise_for_status()
         return response.json()
 
@@ -162,7 +172,11 @@ class BackendVerifier:
         if self._api_config.bearer_token:
             headers["Authorization"] = f"Bearer {self._api_config.bearer_token}"
 
-        response = requests.post(url, headers=headers, timeout=self._api_config.timeout_seconds)
+        response = requests.post(
+            url,
+            headers=headers,
+            timeout=self._api_config.timeout_seconds,
+        )
         response.raise_for_status()
         return response.json()
 
@@ -257,7 +271,9 @@ def _build_configs(raw: Dict[str, Any]) -> tuple[WebConfig, ApiConfig, DbConfig]
     card_selectors = (card_form.get("selectors") or {}).copy()
 
     required_card_selectors = ["card_number", "expiry", "cvv", "name"]
-    missing_card = [name for name in required_card_selectors if not card_selectors.get(name)]
+    missing_card = [
+        name for name in required_card_selectors if not card_selectors.get(name)
+    ]
     if missing_card:
         raise ConfigError(f"Missing required card selectors in test_data.json: {missing_card}")
 
@@ -277,7 +293,9 @@ def _build_configs(raw: Dict[str, Any]) -> tuple[WebConfig, ApiConfig, DbConfig]
     if not web_config.base_url or not web_config.username or not web_config.password:
         raise ConfigError("web.base_url and web.login.(username/password) must be set")
 
-    bearer_token = os.getenv("API_TOKEN", "").strip() or str((api.get("auth") or {}).get("token", "")).strip()
+    bearer_token = os.getenv("API_TOKEN", "").strip()
+    if not bearer_token:
+        bearer_token = str((api.get("auth") or {}).get("token", "")).strip()
     endpoints = api.get("endpoints") or {}
     api_config = ApiConfig(
         base_url=str(api.get("base_url", "")).strip(),
@@ -388,7 +406,7 @@ def _create_paid_order(
 
 
 def _poll_until(
-    callback,
+    callback: Callable[[], Any],
     timeout_seconds: int,
     interval_seconds: int = 2,
     description: str = "condition",
