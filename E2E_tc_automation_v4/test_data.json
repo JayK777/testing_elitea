@@ -1,0 +1,56 @@
+{
+  "web": {
+    "base_url": "https://your-app-under-test.example",
+    "username": "test_user",
+    "password": "test_password"
+  },
+  "selectors": {
+    "username": "[data-testid='login-username']",
+    "password": "[data-testid='login-password']",
+    "login_button": "[data-testid='login-submit']",
+    "cart_button": "[data-testid='nav-cart']",
+    "checkout_button": "[data-testid='checkout-start']",
+    "payment_method_card": "[data-testid='payment-method-card']",
+    "payment_method_wallet": "[data-testid='payment-method-wallet']",
+    "card_number": "[data-testid='card-number']",
+    "card_expiry": "[data-testid='card-expiry']",
+    "card_cvv": "[data-testid='card-cvv']",
+    "pay_now": "[data-testid='pay-now']",
+    "payment_status": "[data-testid='payment-status']",
+    "order_confirmation": "[data-testid='order-confirmation']",
+    "payment_error": "[data-testid='payment-error']"
+  },
+  "payment": {
+    "valid_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "invalid_card": {
+      "number": "4000000000000069",
+      "expiry": "01/20",
+      "cvv": "000"
+    },
+    "gateway_timeout": {
+      "url_pattern": "**/payments/**",
+      "delay_ms": 15000,
+      "pending_text": "Pending",
+      "final_failure_text": "Failure"
+    },
+    "success_text": "Success"
+  },
+  "api": {
+    "base_url": "https://your-api.example",
+    "order_status_path_template": "/orders/{order_id}",
+    "auth_token": ""
+  },
+  "db": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 5432,
+    "database": "",
+    "user": "",
+    "password": "",
+    "order_status_query": "SELECT payment_status FROM payments WHERE order_id = %s ORDER BY updated_at DESC LIMIT 1"
+  }
+}
