@@ -1,0 +1,72 @@
+{
+  "web": {
+    "base_url": "https://your-app.example",
+    "login": {
+      "username": "test_user",
+      "password": "test_pass",
+      "selectors": {
+        "username_input": "#username",
+        "password_input": "#password",
+        "submit_button": "button[type='submit']"
+      }
+    },
+    "checkout": {
+      "selectors": {
+        "go_to_checkout_button": "text=Checkout",
+        "payment_method_card_radio": "text=Credit/Debit Card",
+        "place_order_button": "text=Pay",
+        "payment_success_message": "text=Payment successful",
+        "payment_error_message": "[data-test='payment-error']",
+        "order_id_value": "[data-test='order-id']"
+      },
+      "card_form": {
+        "iframe_selector": null,
+        "selectors": {
+          "card_number": "#cardNumber",
+          "expiry": "#cardExpiry",
+          "cvv": "#cardCvv",
+          "name": "#cardHolder"
+        }
+      }
+    }
+  },
+  "cards": {
+    "valid": {
+      "number": "4242424242424242",
+      "expiry": "12/35",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "invalid": {
+      "number": "4000000000000069",
+      "expiry": "12/20",
+      "cvv": "000",
+      "name": "Test User"
+    }
+  },
+  "api": {
+    "base_url": "https://your-api.example",
+    "timeout_seconds": 20,
+    "endpoints": {
+      "get_order": "/orders/{order_id}",
+      "cancel_order": "/orders/{order_id}/cancel"
+    },
+    "auth": {
+      "type": "bearer",
+      "token": ""
+    }
+  },
+  "db": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 5432,
+    "database": "payments",
+    "user": "postgres",
+    "password": "postgres",
+    "payment_status_query": "SELECT payment_status FROM payments WHERE order_id = %s;"
+  },
+  "timeouts": {
+    "page_navigation_ms": 30000,
+    "payment_processing_ms": 60000
+  }
+}
