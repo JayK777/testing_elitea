@@ -261,6 +261,92 @@ def _pay_by_wallet(page: Page, config: TestConfig) -> None:
     page.click(_selector(config, "pay_now"))
 
 
+def _try_extract_order_id(page: Page, config: TestConfig) -> Optional[str]:
+    selector = config.selectors.get("order_id")
+    if not selector:
+        return None
+
+    try:
+        order_id = page.inner_text(selector).strip()
+        return order_id or None
+    except Exception:
+        LOGGER.exception("Failed to extract order_id using selector '%s'", selector)
+        return None
+
+
+def _validate_order_status_via_api(
+    config: TestConfig,
+    order_id: str,
+    expected_status_contains: str,
+) -> None:
+    if requests is None:
+        LOGGER.info("Skipping API validation (requests not installed)")
+        return
+
+    if not config.api.base_url or not config.api.auth_token:
+        LOGGER.info("Skipping API validation (API config not provided)")
+        return
+
+    url = (
+        config.api.base_url.rstrip("/")
+        + config.api.order_status_path_template.format(order_id=order_id)
+    )
+    headers = {"Authorization": f"Bearer {config.api.auth_token}"}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        raise AssertionError(f"API order status validation failed: {exc}") from exc
+
+    status_str = json.dumps(payload)
+    if expected_status_contains not in status_str:
+        raise AssertionError(
+            f"API status did not contain '{expected_status_contains}'. Payload: {payload}"
+        )
+
+
+def _validate_payment_status_in_db(
+    config: TestConfig,
+    order_id: str,
+    expected_status_contains: str,
+) -> None:
+    if not config.db.enabled:
+        LOGGER.info("Skipping DB validation (db.enabled=false)")
+        return
+
+    if psycopg2 is None:
+        LOGGER.info("Skipping DB validation (psycopg2 not installed)")
+        return
+
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=config.db.host,
+            port=config.db.port,
+            dbname=config.db.database,
+            user=config.db.user,
+            password=config.db.password,
+            connect_timeout=10,
+        )
+        with conn.cursor() as cursor:
+            cursor.execute(config.db.order_status_query, (order_id,))
+            row = cursor.fetchone()
+
+        if not row:
+            raise AssertionError(f"No DB record found for order_id={order_id}")
+
+        status = str(row[0])
+        if expected_status_contains not in status:
+            raise AssertionError(
+                f"DB status '{status}' did not contain '{expected_status_contains}'"
+            )
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 class TestCheckoutPayment:
     """Automation scenarios tagged as A in the EP-31 sheet."""
 
@@ -280,6 +366,21 @@ class TestCheckoutPayment:
             )
             status_text = page.inner_text(_selector(config, "payment_status"))
             assert config.payment.success_text in status_text
+
+            order_id = _try_extract_order_id(page, config)
+            if order_id:
+                _validate_order_status_via_api(
+                    config,
+                    order_id,
+                    expected_status_contains=config.payment.success_text,
+                )
+                _validate_payment_status_in_db(
+                    config,
+                    order_id,
+                    expected_status_contains=config.payment.success_text,
+                )
+            else:
+                LOGGER.info("order_id selector not configured; skipping API/DB checks")
         except Exception as exc:
             shot = _safe_screenshot(page, "tc_01_failure")
             pytest.fail(f"TC_01 failed: {exc}. Screenshot: {shot}")
@@ -294,7 +395,10 @@ class TestCheckoutPayment:
             _start_checkout(page, config)
             _pay_by_card(page, config, config.payment.invalid_card)
 
-            page.wait_for_selector(_selector(config, "payment_error"), timeout=60000)
+            page.wait_for_selector(
+                _selector(config, "payment_error"),
+                timeout=60000,
+            )
             assert page.is_visible(_selector(config, "payment_error"))
 
             confirmation_selector = _selector(config, "order_confirmation")
@@ -313,7 +417,11 @@ class TestCheckoutPayment:
             url_pattern = config.payment.gateway_timeout.url_pattern
 
             def _delay_route(route, request):  # type: ignore[no-untyped-def]
-                LOGGER.info("Delaying gateway request %s by %sms", request.url, delay_ms)
+                LOGGER.info(
+                    "Delaying gateway request %s by %sms",
+                    request.url,
+                    delay_ms,
+                )
                 time.sleep(delay_ms / 1000)
                 route.continue_()
 
