@@ -1,0 +1,74 @@
+{
+  "web": {
+    "base_url": "https://YOUR-AUT.example",
+    "login_path": "/login",
+    "checkout_path": "/checkout",
+    "selectors": {
+      "username": "#username",
+      "password": "#password",
+      "login_button": "button[type='submit']",
+      "card_option": "text=Credit/Debit Card",
+      "card_number": "#cardNumber",
+      "card_expiry": "#cardExpiry",
+      "card_cvv": "#cardCvv",
+      "card_name": "#cardName",
+      "pay_button": "button:has-text('Pay')",
+      "payment_success": "text=Payment successful",
+      "payment_error": "[data-testid='payment-error']",
+      "order_id": "[data-testid='order-id']",
+      "cancel_order_button": "button:has-text('Cancel order')",
+      "confirm_cancel_button": "button:has-text('Confirm')",
+      "refund_status": "text=Refunded"
+    },
+    "timeouts_ms": {
+      "payment_processing": 60000
+    },
+    "expected_payment_error_keywords": [
+      "invalid",
+      "expired",
+      "declined"
+    ]
+  },
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "card_valid": {
+    "number": "4111111111111111",
+    "expiry": "12/30",
+    "cvv": "123",
+    "name": "Test User"
+  },
+  "card_invalid": {
+    "number": "4000000000000069",
+    "expiry": "01/20",
+    "cvv": "000",
+    "name": "Test User"
+  },
+  "api": {
+    "base_url": "https://YOUR-API.example",
+    "token": "",
+    "timeout_s": 30,
+    "order_status_path": "",
+    "refund_status_path": "",
+    "expected_paid_status": [
+      "paid",
+      "success"
+    ],
+    "expected_refunded_status": [
+      "refunded",
+      "cancelled"
+    ]
+  },
+  "db": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "payments",
+    "user": "postgres",
+    "password": "",
+    "sslmode": "prefer",
+    "payment_status_query": "",
+    "expected_paid_status": "paid"
+  }
+}
