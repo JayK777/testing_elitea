@@ -1,0 +1,49 @@
+{
+  "base_url": "",
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "cards": {
+    "valid": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User"
+    },
+    "declined": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Declined User"
+    }
+  },
+  "billing": {
+    "address1": "1 Test Street",
+    "city": "Testville",
+    "state": "CA",
+    "zip": "94016",
+    "country": "US"
+  },
+  "gateway": {
+    "latency_seconds": 9,
+    "payment_timeout_seconds": 30
+  },
+  "ui": {
+    "expected_success_text": "Payment successful",
+    "expected_decline_text": "Payment declined",
+    "expected_processing_text": "Processing"
+  },
+  "api": {
+    "base_url": "",
+    "token": ""
+  },
+  "database": {
+    "host": "",
+    "port": 5432,
+    "name": "",
+    "user": "",
+    "password": "",
+    "sslmode": "prefer"
+  }
+}
