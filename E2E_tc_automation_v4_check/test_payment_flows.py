@@ -302,4 +302,17 @@ class TestCardPayments:
         """TC_02: invalid/expired card is declined with a clear error message and no crash."""
         ui.login()
 
-        ui.pay_with_card(ui._cfg.card_invalid
+        ui.pay_with_card(ui._cfg.card_invalid)
+        error_text = ui.assert_payment_error()
+
+        assert error_text, "Expected a non-empty payment error message"
+
+        expected_keywords = ui._cfg.web.get(
+            "expected_payment_error_keywords",
+            ["invalid", "expired", "declined"],
+        )
+        normalized = error_text.lower()
+        assert any(str(k).lower() in normalized for k in expected_keywords), (
+            f"Error message not informative enough. error_text={error_text!r} "
+            f"expected_keywords={expected_keywords}"
+        )
