@@ -437,10 +437,36 @@ class TestAmountIntegrity:
 
         ui_amount = _get_ui_payable_amount(page, config)
 
-        # Best-effort interception. If not configured, the test will validate receipt-only.
-        _intercept_amount_from_gateway_request(page, config)
+        captured = _setup_payment_request_capture(page, config)
 
         _select_card_method(page, config)
         _fill_card_details(page, config, config.card_success)
 
-        _click_pay
+        _click_pay(page, config)
+        _maybe_complete_3ds(page, config)
+
+        final_status = _wait_for_payment_final_status(page, config)
+        assert "success" in final_status, f"Expected success status, got: {final_status!r}"
+
+        _ensure_single_order_confirmation(page, config)
+
+        receipt_amount = _get_receipt_amount(page, config)
+        if receipt_amount is not None:
+            assert receipt_amount == ui_amount, (
+                f"Receipt amount {receipt_amount} does not match UI payable {ui_amount}"
+            )
+
+        if captured.get("amount"):
+            gateway_amount = _to_money(captured["amount"] or "")
+            assert gateway_amount == ui_amount, (
+                f"Gateway amount {gateway_amount} does not match UI payable {ui_amount}"
+            )
+
+        if captured.get("currency"):
+            assert (
+                captured["currency"] or ""
+            ).upper() == config.expected_currency.upper(), "Unexpected currency in gateway request"
+
+        order_id = _extract_order_id(page, config)
+        if order_id and captured.get("order_id"):
+            assert captured["order_id"] == order_id, "orderId mismatch between UI and gateway request"
