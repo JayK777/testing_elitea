@@ -289,19 +289,25 @@ def _get_ui_payable_amount(page: Page, config: AppConfig) -> Decimal:
     return _to_money(label.text_content() or "")
 
 
-def _intercept_amount_from_gateway_request(
-    page: Page, config: AppConfig
-) -> Tuple[Optional[Decimal], Optional[str], Optional[str]]:
-    """Intercept the payment request to validate amount/currency/orderId.
+def _setup_payment_request_capture(page: Page, config: AppConfig) -> Dict[str, Optional[str]]:
+    """Capture payment request fields for validations (best-effort).
 
-    Returns: (amount, currency, order_id)
+    Configure in test_data.json:
+      network.payment_request_url_pattern: Playwright URL match pattern/regex
+      network.amount_field / currency_field / order_id_field: JSON field names
+
+    Returns a dict that will be populated once the matching request is sent.
     """
 
     target_pattern = config.network.get("payment_request_url_pattern")
-    if not target_pattern:
-        return (None, None, None)
-
     captured: Dict[str, Optional[str]] = {"amount": None, "currency": None, "order_id": None}
+
+    if not target_pattern:
+        return captured
+
+    amount_field = config.network.get("amount_field", "amount")
+    currency_field = config.network.get("currency_field", "currency")
+    order_id_field = config.network.get("order_id_field", "orderId")
 
     def _handler(route, request):  # type: ignore[no-untyped-def]
         try:
@@ -310,15 +316,30 @@ def _intercept_amount_from_gateway_request(
             post = None
 
         if isinstance(post, dict):
-            captured["amount"] = str(post.get(config.network.get("amount_field", "amount"), ""))
-            captured["currency"] = str(post.get(config.network.get("currency_field", "currency"), ""))
-            captured["order_id"] = str(post.get(config.network.get("order_id_field", "orderId"), ""))
+            if amount_field in post:
+                captured["amount"] = str(post.get(amount_field))
+            if currency_field in post:
+                captured["currency"] = str(post.get(currency_field))
+            if order_id_field in post:
+                captured["order_id"] = str(post.get(order_id_field))
 
         route.continue_()
 
     page.route(target_pattern, _handler)
+    return captured
 
-    return (None, None, None)
+
+def _get_receipt_amount(page: Page, config: AppConfig) -> Optional[Decimal]:
+    selector = config.selectors.get("receipt_total_label")
+    if not selector:
+        return None
+
+    total = page.locator(selector)
+    if total.count() == 0:
+        return None
+
+    expect(total.first).to_be_visible()
+    return _to_money(total.first.text_content() or "")
 
 
 # ============================
