@@ -91,6 +91,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.fixture(scope="session")
 def config(pytestconfig: pytest.Config) -> AppConfig:
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     cfg = _load_config()
     cli_base_url = pytestconfig.getoption("base_url")
     if cli_base_url:
