@@ -1,0 +1,88 @@
+{
+  "base_url": "https://example.test",
+  "expected_currency": "USD",
+  "credentials": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "timeouts": {
+    "default_ms": 15000,
+    "navigation_ms": 30000,
+    "otp_ms": 45000,
+    "payment_final_ms": 120000,
+    "duplicate_click_timeout_ms": 1500
+  },
+  "selectors": {
+    "login_url": "/login",
+    "menu_url": "/restaurants",
+
+    "login_username": "#username",
+    "login_password": "#password",
+    "login_submit": "button[type='submit']",
+    "home_marker": "data-test=home",
+
+    "add_item_button": "data-test=add-item",
+    "cart_button": "data-test=open-cart",
+    "checkout_button": "data-test=checkout",
+
+    "payment_screen_marker": "data-test=payment-screen",
+    "address_continue_button": "data-test=address-continue",
+
+    "payment_method_card": "data-test=pay-card",
+    "card_form_marker": "data-test=card-form",
+    "card_number": "input[name='cardNumber']",
+    "card_expiry": "input[name='expiry']",
+    "card_cvv": "input[name='cvv']",
+    "card_name": "input[name='cardholderName']",
+
+    "otp_input": "input[name='otp']",
+    "otp_submit": "button[data-test='otp-submit']",
+
+    "pay_button": "data-test=pay",
+    "payment_status_label": "data-test=payment-status",
+    "payment_failure_message": "data-test=payment-error",
+    "payment_retry_button": "data-test=payment-retry",
+    "payment_change_method_button": "data-test=payment-change-method",
+
+    "order_confirmation_marker": "data-test=order-confirmation",
+    "order_id_label": "data-test=order-id",
+
+    "payable_amount_label": "data-test=payable-amount",
+    "receipt_total_label": "data-test=receipt-total"
+  },
+  "cards": {
+    "success": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Test User",
+      "otp": "000000"
+    },
+    "decline": {
+      "number": "4000000000000002",
+      "expiry": "12/30",
+      "cvv": "123",
+      "name": "Declined User"
+    }
+  },
+  "network": {
+    "payment_request_url_pattern": "**/payments/**",
+    "amount_field": "amount",
+    "currency_field": "currency",
+    "order_id_field": "orderId",
+    "simulate_delay_ms": 8000
+  },
+  "api": {
+    "enabled": false,
+    "base_url": "https://api.example.test",
+    "order_totals_path_template": "/api/orders/{order_id}",
+    "timeout_seconds": 10,
+    "auth_header": ""
+  },
+  "db": {
+    "enabled": false,
+    "dsn": "postgresql://user:pass@localhost:5432/dbname",
+    "order_query": "SELECT currency, total_amount FROM orders WHERE order_id = %(order_id)s"
+  }
+}
+
