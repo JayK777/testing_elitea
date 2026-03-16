@@ -86,10 +86,3 @@
   }
 }
 
-/*
-Notes:
-- Override base_url via env var BASE_URL or pytest --base-url.
-- Update selectors and payment_request_url_pattern to match your AUT.
-- Use gateway test card numbers that are supported by your payment simulator.
-*/
-
