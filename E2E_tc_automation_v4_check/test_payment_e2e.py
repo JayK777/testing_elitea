@@ -553,3 +553,26 @@ class TestAmountIntegrity:
         order_id = _extract_order_id(page, config)
         if order_id and captured.get("order_id"):
             assert captured["order_id"] == order_id, "orderId mismatch between UI and gateway request"
+
+        if not order_id:
+            return
+
+        api_data = _fetch_order_totals_via_api(config, order_id)
+        if api_data and api_data.get("total_amount") is not None:
+            api_amount = _to_money(str(api_data["total_amount"]))
+            assert api_amount == ui_amount, (
+                f"API total_amount {api_amount} does not match UI payable {ui_amount}"
+            )
+
+        if api_data and api_data.get("currency"):
+            assert str(api_data["currency"]).upper() == config.expected_currency.upper()
+
+        db_data = _fetch_order_totals_via_db(config, order_id)
+        if db_data and db_data.get("total_amount") is not None:
+            db_amount = _to_money(str(db_data["total_amount"]))
+            assert db_amount == ui_amount, (
+                f"DB total_amount {db_amount} does not match UI payable {ui_amount}"
+            )
+
+        if db_data and db_data.get("currency"):
+            assert str(db_data["currency"]).upper() == config.expected_currency.upper()
