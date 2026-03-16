@@ -342,6 +342,89 @@ def _get_receipt_amount(page: Page, config: AppConfig) -> Optional[Decimal]:
     return _to_money(total.first.text_content() or "")
 
 
+def _fetch_order_totals_via_api(config: AppConfig, order_id: str) -> Optional[Dict[str, Any]]:
+    """Optional backend validation for TC_06.
+
+    Requires in test_data.json:
+      api.enabled=true
+      api.base_url
+      api.order_totals_path_template (e.g., "/api/orders/{order_id}")
+      api.timeout_seconds
+      api.auth_header (optional; string)
+    """
+
+    if not config.api.get("enabled"):
+        return None
+
+    try:
+        import requests  # type: ignore
+    except Exception:  # noqa: BLE001
+        LOGGER.warning("requests not installed; skipping API validations")
+        return None
+
+    base_url = str(config.api.get("base_url", "")).rstrip("/")
+    path_tpl = str(config.api.get("order_totals_path_template", ""))
+    if not (base_url and path_tpl):
+        return None
+
+    url = f"{base_url}{path_tpl.format(order_id=order_id)}"
+    headers: Dict[str, str] = {}
+    if config.api.get("auth_header"):
+        headers["Authorization"] = str(config.api["auth_header"])
+
+    timeout = float(config.api.get("timeout_seconds", 10))
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, dict) else None
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("API validation failed/skipped: %s", exc)
+        return None
+
+
+def _fetch_order_totals_via_db(config: AppConfig, order_id: str) -> Optional[Dict[str, Any]]:
+    """Optional DB validation for TC_06 (PostgreSQL).
+
+    Requires in test_data.json:
+      db.enabled=true
+      db.dsn
+      db.order_query (SQL returning columns: currency,total_amount)
+    """
+
+    if not config.db.get("enabled"):
+        return None
+
+    try:
+        import psycopg2  # type: ignore
+    except Exception:  # noqa: BLE001
+        LOGGER.warning("psycopg2 not installed; skipping DB validations")
+        return None
+
+    dsn = str(config.db.get("dsn", "")).strip()
+    query = str(config.db.get("order_query", "")).strip()
+    if not (dsn and query):
+        return None
+
+    try:
+        conn = psycopg2.connect(dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, {"order_id": order_id})
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                columns = [desc[0] for desc in cur.description]
+                return dict(zip(columns, row))
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("DB validation failed/skipped: %s", exc)
+        return None
+
+
 # ============================
 # Tests
 # ============================
