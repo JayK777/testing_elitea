@@ -237,6 +237,24 @@ class PaymentFlow:
         self._cfg = cfg
         self._s = cfg.web.selectors
 
+        _require_selectors(
+            self._s,
+            keys=[
+                "username",
+                "password",
+                "login_button",
+                "payment_method_card",
+                "payment_method_wallet",
+                "card_number",
+                "card_expiry",
+                "card_cvv",
+                "pay_button",
+                "status_text",
+                "order_confirmation",
+                "error_message",
+            ],
+        )
+
     def goto_login(self) -> None:
         self._page.goto(f"{self._cfg.web.base_url}{self._cfg.web.login_path}")
 
