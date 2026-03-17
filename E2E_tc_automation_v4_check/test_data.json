@@ -1,0 +1,60 @@
+{
+  "web": {
+    "base_url": "https://example.com",
+    "login_path": "/login",
+    "checkout_path": "/checkout",
+    "selectors": {
+      "username": "#username",
+      "password": "#password",
+      "login_button": "button[type='submit']",
+      "payment_method_card": "text=Card",
+      "payment_method_wallet": "text=Wallet",
+      "card_number": "#cardNumber",
+      "card_expiry": "#cardExpiry",
+      "card_cvv": "#cardCvv",
+      "pay_button": "button:has-text('Pay')",
+      "retry_button": "button:has-text('Retry')",
+      "change_method_button": "button:has-text('Change method')",
+      "status_text": "[data-test='payment-status']",
+      "order_confirmation": "[data-test='order-confirmation']",
+      "error_message": "[data-test='payment-error']",
+      "top_up_button": "button:has-text('Top-up')"
+    }
+  },
+  "user": {
+    "username": "test_user",
+    "password": "test_pass"
+  },
+  "payment": {
+    "valid_card": {
+      "number": "4111111111111111",
+      "expiry": "12/30",
+      "cvv": "123"
+    },
+    "invalid_card": {
+      "number": "4111111111111129",
+      "expiry": "01/20",
+      "cvv": "000"
+    },
+    "wallet": {
+      "insufficient_balance": true
+    }
+  },
+  "api": {
+    "base_url": "https://api.example.com",
+    "auth": {
+      "token_env": "API_TOKEN"
+    },
+    "endpoints": {
+      "latest_order": "/orders/latest",
+      "payment_transactions": "/payments/transactions"
+    }
+  },
+  "db": {
+    "enabled": false,
+    "dsn_env": "POSTGRES_DSN",
+    "queries": {
+      "latest_payment_by_order": "SELECT id, status, amount FROM payments WHERE order_id = %(order_id)s ORDER BY created_at DESC LIMIT 1"
+    }
+  }
+}
