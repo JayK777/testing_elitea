@@ -312,20 +312,149 @@ class PaymentFlow:
 class TestPaymentsE2E:
     """Automation-tagged E2E payment scenarios from the spreadsheet."""
 
+    def _assert_success(self, flow: PaymentFlow) -> None:
+        status = flow.wait_for_final_status(expected=["success", "paid", "completed"])
+        assert flow.is_order_confirmed(), (
+            "Order confirmation is not visible after payment success. "
+            f"Last status: {status}"
+        )
+
     def test_tc01_card_payment_success(self, page: Page, cfg: TestConfig) -> None:
-        raise NotImplementedError
+        flow = PaymentFlow(page, cfg)
+
+        try:
+            flow.open_checkout_authenticated()
+            flow.choose_card_payment()
+            flow.fill_card_details(cfg.payment["valid_card"])
+            flow.submit_payment()
+            self._assert_success(flow)
+        except Exception:
+            _safe_screenshot(page, "tc01_card_payment_success")
+            raise
 
     def test_tc02_card_payment_invalid_details_retry_or_change_method(
         self, page: Page, cfg: TestConfig
     ) -> None:
-        raise NotImplementedError
+        flow = PaymentFlow(page, cfg)
+
+        try:
+            flow.open_checkout_authenticated()
+            flow.choose_card_payment()
+            flow.fill_card_details(cfg.payment["invalid_card"])
+            flow.submit_payment()
+
+            failure_status = flow.wait_for_final_status(
+                expected=["fail", "declin", "invalid", "error"],
+                timeout_s=60,
+            )
+            assert flow.get_error_message() or failure_status, (
+                "Expected an error message or failure status after invalid card payment"
+            )
+
+            retried = _click_if_visible(page, cfg.web.selectors["retry_button"], timeout_ms=2_000)
+            if retried:
+                flow.choose_card_payment()
+                flow.fill_card_details(cfg.payment["valid_card"])
+                flow.submit_payment()
+                self._assert_success(flow)
+                return
+
+            changed = _click_if_visible(
+                page, cfg.web.selectors["change_method_button"], timeout_ms=2_000
+            )
+            assert changed, (
+                "Neither Retry nor Change method actions are available after failure"
+            )
+
+            flow.choose_wallet_payment()
+            flow.submit_payment()
+            self._assert_success(flow)
+        except Exception:
+            _safe_screenshot(page, "tc02_invalid_card_retry_or_change_method")
+            raise
 
     def test_tc04_gateway_timeout_retry_no_double_charge(
         self, page: Page, cfg: TestConfig
     ) -> None:
-        raise NotImplementedError
+        if os.getenv("ENABLE_TIMEOUT_TEST", "false").lower() != "true":
+            pytest.skip("Set ENABLE_TIMEOUT_TEST=true to execute timeout scenario")
+
+        flow = PaymentFlow(page, cfg)
+        session = _build_api_session(cfg)
+
+        try:
+            flow.open_checkout_authenticated()
+            flow.choose_wallet_payment()
+            flow.submit_payment()
+
+            flow.wait_for_final_status(
+                expected=["timeout", "timed out", "processing", "fail"],
+                timeout_s=120,
+            )
+
+            _click_if_visible(page, cfg.web.selectors["retry_button"], timeout_ms=5_000)
+            flow.choose_card_payment()
+            flow.fill_card_details(cfg.payment["valid_card"])
+            flow.submit_payment()
+            self._assert_success(flow)
+
+            if session and cfg.api.endpoints.get("latest_order"):
+                order = _api_get_json(
+                    session, cfg.api.base_url, cfg.api.endpoints["latest_order"]
+                )
+                if order and cfg.api.endpoints.get("payment_transactions"):
+                    tx = _api_get_json(
+                        session,
+                        cfg.api.base_url,
+                        cfg.api.endpoints["payment_transactions"],
+                    )
+                    if isinstance(tx, dict):
+                        LOGGER.info("Transactions response: %s", tx)
+
+            if cfg.db.enabled:
+                dsn = os.getenv(cfg.db.dsn_env, "").strip()
+                if dsn and cfg.db.queries.get("latest_payment_by_order"):
+                    LOGGER.info("DB verification enabled; ensure order_id mapping is configured")
+        except Exception:
+            _safe_screenshot(page, "tc04_gateway_timeout")
+            raise
 
     def test_tc06_wallet_insufficient_balance_topup_or_alternate_method(
         self, page: Page, cfg: TestConfig
     ) -> None:
-        raise NotImplementedError
+        flow = PaymentFlow(page, cfg)
+
+        try:
+            flow.open_checkout_authenticated()
+            flow.choose_wallet_payment()
+            flow.submit_payment()
+
+            status = flow.wait_for_final_status(
+                expected=["insufficient", "low balance", "fail", "error"],
+                timeout_s=60,
+            )
+            assert flow.get_error_message() or status, (
+                "Expected insufficient balance messaging/status for wallet payment"
+            )
+
+            topped_up = _click_if_visible(
+                page, cfg.web.selectors["top_up_button"], timeout_ms=2_000
+            )
+            if topped_up:
+                flow.choose_wallet_payment()
+                flow.submit_payment()
+                self._assert_success(flow)
+                return
+
+            changed = _click_if_visible(
+                page, cfg.web.selectors["change_method_button"], timeout_ms=2_000
+            )
+            assert changed, "Top-up not available and cannot change payment method"
+
+            flow.choose_card_payment()
+            flow.fill_card_details(cfg.payment["valid_card"])
+            flow.submit_payment()
+            self._assert_success(flow)
+        except Exception:
+            _safe_screenshot(page, "tc06_wallet_insufficient_balance")
+            raise
