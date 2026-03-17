@@ -139,6 +139,96 @@ def _safe_screenshot(page: Page, name: str) -> Optional[str]:
         return None
 
 
+def _require_selectors(selectors: Dict[str, str], keys: List[str]) -> None:
+    missing = [key for key in keys if key not in selectors]
+    if missing:
+        raise KeyError(
+            "Missing required selectors in test_data.json: "
+            f"{', '.join(missing)}"
+        )
+
+
+def _click_if_visible(page: Page, selector: str, timeout_ms: int = 1_000) -> bool:
+    locator = page.locator(selector)
+    try:
+        locator.wait_for(state="visible", timeout=timeout_ms)
+    except Exception:
+        return False
+
+    locator.click()
+    return True
+
+
+def _wait_for_status_text(
+    page: Page,
+    selector: str,
+    expected_substrings: List[str],
+    timeout_s: int = 60,
+    poll_s: float = 1.0,
+) -> str:
+    end_time = time.time() + timeout_s
+    last_text = ""
+
+    while time.time() < end_time:
+        try:
+            last_text = (page.locator(selector).inner_text() or "").strip()
+        except Exception:
+            last_text = ""
+
+        if any(s.lower() in last_text.lower() for s in expected_substrings):
+            return last_text
+
+        time.sleep(poll_s)
+
+    raise TimeoutError(
+        f"Timed out waiting for status. Last status text: '{last_text}'"
+    )
+
+
+def _build_api_session(cfg: TestConfig) -> Optional[requests.Session]:
+    if not cfg.api.base_url:
+        return None
+
+    token = os.getenv(cfg.api.token_env, "").strip()
+    session = requests.Session()
+    session.headers.update({"Accept": "application/json"})
+    if token:
+        session.headers.update({"Authorization": f"Bearer {token}"})
+
+    return session
+
+
+def _api_get_json(
+    session: requests.Session, base_url: str, path: str
+) -> Optional[Dict[str, Any]]:
+    url = f"{base_url}{path}"
+    try:
+        resp = session.get(url, timeout=15)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        LOGGER.exception("API request failed: %s", url)
+        return None
+
+
+def _db_fetch_one(
+    dsn: str, query: str, params: Dict[str, Any]
+) -> Optional[Tuple[Any, ...]]:
+    with contextlib.suppress(ImportError):
+        import psycopg2  # type: ignore
+
+        conn = psycopg2.connect(dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                return cur.fetchone()
+        finally:
+            conn.close()
+
+    LOGGER.warning("psycopg2 is not installed; skipping DB verification")
+    return None
+
+
 class PaymentFlow:
     """UI actions for payment flow. Keep selectors configurable via test_data.json."""
 
