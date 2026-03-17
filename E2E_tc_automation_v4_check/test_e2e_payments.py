@@ -267,6 +267,44 @@ class PaymentFlow:
     def goto_checkout(self) -> None:
         self._page.goto(f"{self._cfg.web.base_url}{self._cfg.web.checkout_path}")
 
+    def open_checkout_authenticated(self) -> None:
+        self.login()
+        self.goto_checkout()
+
+    def choose_card_payment(self) -> None:
+        self._page.click(self._s["payment_method_card"])
+
+    def choose_wallet_payment(self) -> None:
+        self._page.click(self._s["payment_method_wallet"])
+
+    def fill_card_details(self, card: Dict[str, str]) -> None:
+        self._page.fill(self._s["card_number"], card["number"])
+        self._page.fill(self._s["card_expiry"], card["expiry"])
+        self._page.fill(self._s["card_cvv"], card["cvv"])
+
+    def submit_payment(self) -> None:
+        self._page.click(self._s["pay_button"])
+
+    def wait_for_final_status(self, expected: List[str], timeout_s: int = 90) -> str:
+        return _wait_for_status_text(
+            page=self._page,
+            selector=self._s["status_text"],
+            expected_substrings=expected,
+            timeout_s=timeout_s,
+        )
+
+    def get_error_message(self) -> str:
+        try:
+            return (self._page.locator(self._s["error_message"]).inner_text() or "").strip()
+        except Exception:
+            return ""
+
+    def is_order_confirmed(self) -> bool:
+        try:
+            return self._page.locator(self._s["order_confirmation"]).is_visible()
+        except Exception:
+            return False
+
 
 class TestPaymentsE2E:
     """Automation-tagged E2E payment scenarios from the spreadsheet."""
